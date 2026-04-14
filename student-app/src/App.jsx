@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-const API = "http://localhost:8000/api";
+// In dev the Vite proxy rewrites /api -> backend; in production set VITE_API_BASE_URL.
+const API = import.meta.env.VITE_API_BASE_URL || "/api";
 
 // ===== Utility hooks =====
 function useFetch(url) {

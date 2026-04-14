@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
-const API = "http://localhost:8000/api";
+// In dev the Vite proxy rewrites /api -> backend; in production set VITE_API_BASE_URL.
+const API = import.meta.env.VITE_API_BASE_URL || "/api";
 
 // ===== Utility =====
 async function apiFetch(path, opts = {}) {
