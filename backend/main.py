@@ -192,6 +192,11 @@ async def api_delete_exercise(exercise_id: str):
 async def api_check_answer(exercise_id: str, data: AnswerCheck):
     return await exercise.check_answer(exercise_id, data.user_answer)
 
+@app.get("/api/lessons/{lesson_id}/random-exercises")
+async def api_random_exercises(lesson_id: str, count: int = 10):
+    return await exercise.get_random_exercises(lesson_id, count)
+
+
 
 # ===== Progress Routes =====
 

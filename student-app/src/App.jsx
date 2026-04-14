@@ -1,749 +1,802 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 // In dev the Vite proxy rewrites /api -> backend; in production set VITE_API_BASE_URL.
 const API = import.meta.env.VITE_API_BASE_URL || "/api";
-
-// ===== Utility hooks =====
 function useFetch(url) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    fetch(API + url).then(r => r.json()).then(d => { setData(d); setLoading(false); }).catch(() => setLoading(false));
-  }, [url]);
-  return { data, loading };
+  useEffect(() => { setLoading(true); fetch(API + url).then(r => r.json()).then(d => { setData(d); setLoading(false); }).catch(() => setLoading(false)); }, [url]);
+  return { data, loading, refetch: () => fetch(API + url).then(r => r.json()).then(setData) };
 }
 
-// ===== Color palette =====
-const colors = {
-  bg: "#FFF8F0", card: "#FFFFFF", primary: "#FF6B6B", secondary: "#4ECDC4",
-  accent: "#FFE66D", purple: "#A78BFA", blue: "#60A5FA", green: "#34D399",
-  text: "#2D3436", textLight: "#636E72", border: "#F0E6D8",
-  star: "#FBBF24", starEmpty: "#E5E7EB"
+// ===== COLORS =====
+const C = {
+  bg1: "#FFF4E6", bg2: "#E8F8F5", bg3: "#F0E6FF",
+  pink: "#FF6B8A", orange: "#FF8C42", yellow: "#FFD93D", green: "#6BCB77",
+  blue: "#4D96FF", purple: "#9B59B6", teal: "#1ABC9C", coral: "#FF6F61",
+  text: "#2C3E50", textLight: "#7F8C8D", card: "#FFFFFF", border: "#F0E0D0",
+  star: "#FFD700", starEmpty: "#E0D5C5",
 };
 
-// ===== Star display =====
-function Stars({ count = 0, max = 3, size = 20 }) {
+// ===== CUTE SVG OBJECTS (original designs) =====
+const cuteItems = [
+  // Cat face
+  (s, i) => <svg key={i} width={s} height={s} viewBox="0 0 60 60"><ellipse cx="30" cy="34" rx="22" ry="20" fill="#FFD89B"/><polygon points="12,20 8,4 22,16" fill="#FFD89B" stroke="#E8B86D" strokeWidth="1"/><polygon points="48,20 52,4 38,16" fill="#FFD89B" stroke="#E8B86D" strokeWidth="1"/><circle cx="22" cy="30" r="3.5" fill="#2C3E50"/><circle cx="38" cy="30" r="3.5" fill="#2C3E50"/><circle cx="23" cy="29" r="1.2" fill="#fff"/><circle cx="39" cy="29" r="1.2" fill="#fff"/><ellipse cx="30" cy="37" rx="3" ry="2" fill="#FF9A9E"/><path d="M27,40 Q30,44 33,40" fill="none" stroke="#E8B86D" strokeWidth="1.5" strokeLinecap="round"/><line x1="10" y1="33" x2="20" y2="35" stroke="#E8B86D" strokeWidth="0.8"/><line x1="10" y1="37" x2="20" y2="37" stroke="#E8B86D" strokeWidth="0.8"/><line x1="40" y1="35" x2="50" y2="33" stroke="#E8B86D" strokeWidth="0.8"/><line x1="40" y1="37" x2="50" y2="37" stroke="#E8B86D" strokeWidth="0.8"/></svg>,
+  // Dog face
+  (s, i) => <svg key={i} width={s} height={s} viewBox="0 0 60 60"><ellipse cx="30" cy="34" rx="21" ry="20" fill="#C4A882"/><ellipse cx="14" cy="22" rx="10" ry="14" fill="#A0845C" transform="rotate(-15 14 22)"/><ellipse cx="46" cy="22" rx="10" ry="14" fill="#A0845C" transform="rotate(15 46 22)"/><circle cx="22" cy="30" r="3.5" fill="#2C3E50"/><circle cx="38" cy="30" r="3.5" fill="#2C3E50"/><circle cx="23" cy="29" r="1.2" fill="#fff"/><circle cx="39" cy="29" r="1.2" fill="#fff"/><ellipse cx="30" cy="39" rx="8" ry="6" fill="#F5E6D3"/><ellipse cx="30" cy="37" rx="4" ry="3" fill="#2C3E50"/><path d="M28,41 Q30,44 32,41" fill="none" stroke="#C4A882" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+  // Bunny
+  (s, i) => <svg key={i} width={s} height={s} viewBox="0 0 60 60"><ellipse cx="22" cy="14" rx="6" ry="16" fill="#F5E6F0" stroke="#E0C8D8" strokeWidth="1"/><ellipse cx="38" cy="14" rx="6" ry="16" fill="#F5E6F0" stroke="#E0C8D8" strokeWidth="1"/><ellipse cx="22" cy="12" rx="3" ry="10" fill="#FFB6C1"/><ellipse cx="38" cy="12" rx="3" ry="10" fill="#FFB6C1"/><ellipse cx="30" cy="38" rx="20" ry="18" fill="#F5E6F0"/><circle cx="23" cy="34" r="3" fill="#2C3E50"/><circle cx="37" cy="34" r="3" fill="#2C3E50"/><circle cx="24" cy="33" r="1" fill="#fff"/><circle cx="38" cy="33" r="1" fill="#fff"/><ellipse cx="30" cy="40" rx="2.5" ry="2" fill="#FFB6C1"/><line x1="20" y1="40" x2="12" y2="38" stroke="#E0C8D8" strokeWidth="0.8"/><line x1="20" y1="42" x2="12" y2="43" stroke="#E0C8D8" strokeWidth="0.8"/><line x1="40" y1="40" x2="48" y2="38" stroke="#E0C8D8" strokeWidth="0.8"/><line x1="40" y1="42" x2="48" y2="43" stroke="#E0C8D8" strokeWidth="0.8"/></svg>,
+  // Strawberry
+  (s, i) => <svg key={i} width={s} height={s} viewBox="0 0 60 60"><path d="M24,18 Q20,12 26,8 L30,6 L34,8 Q40,12 36,18" fill="#4CAF50"/><path d="M22,20 Q18,18 22,14" fill="#66BB6A" stroke="none"/><path d="M38,20 Q42,18 38,14" fill="#66BB6A" stroke="none"/><path d="M20,22 Q16,36 22,48 Q28,56 30,56 Q32,56 38,48 Q44,36 40,22 Z" fill="#FF4757"/><circle cx="28" cy="30" r="1.2" fill="#FFE66D"/><circle cx="34" cy="34" r="1.2" fill="#FFE66D"/><circle cx="26" cy="38" r="1.2" fill="#FFE66D"/><circle cx="32" cy="42" r="1.2" fill="#FFE66D"/><circle cx="36" cy="26" r="1.2" fill="#FFE66D"/><circle cx="24" cy="28" r="1" fill="#FFE66D"/></svg>,
+  // Bun / Baozi
+  (s, i) => <svg key={i} width={s} height={s} viewBox="0 0 60 60"><ellipse cx="30" cy="40" rx="24" ry="14" fill="#F5DEB3"/><path d="M10,36 Q10,14 30,10 Q50,14 50,36" fill="#FFF8DC"/><path d="M22,16 Q26,10 30,14 Q34,10 38,16" fill="none" stroke="#DEB887" strokeWidth="2" strokeLinecap="round"/><circle cx="22" cy="30" r="2.5" fill="#2C3E50"/><circle cx="38" cy="30" r="2.5" fill="#2C3E50"/><circle cx="23" cy="29" r="0.8" fill="#fff"/><circle cx="39" cy="29" r="0.8" fill="#fff"/><path d="M27,35 Q30,38 33,35" fill="none" stroke="#DEB887" strokeWidth="1.5" strokeLinecap="round"/><ellipse cx="18" cy="33" rx="4" ry="3" fill="#FFB6C1" opacity="0.4"/><ellipse cx="42" cy="33" rx="4" ry="3" fill="#FFB6C1" opacity="0.4"/></svg>,
+  // Star with face
+  (s, i) => <svg key={i} width={s} height={s} viewBox="0 0 60 60"><path d="M30,4 L36,22 L56,22 L40,34 L46,52 L30,42 L14,52 L20,34 L4,22 L24,22 Z" fill="#FFD700" stroke="#FFA500" strokeWidth="1"/><circle cx="25" cy="28" r="2.5" fill="#2C3E50"/><circle cx="35" cy="28" r="2.5" fill="#2C3E50"/><circle cx="26" cy="27" r="0.8" fill="#fff"/><circle cx="36" cy="27" r="0.8" fill="#fff"/><path d="M27,34 Q30,37 33,34" fill="none" stroke="#E89B00" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+  // Apple
+  (s, i) => <svg key={i} width={s} height={s} viewBox="0 0 60 60"><path d="M30,12 Q34,6 38,10" stroke="#4CAF50" strokeWidth="2.5" fill="none" strokeLinecap="round"/><ellipse cx="24" cy="36" rx="16" ry="18" fill="#FF4444"/><ellipse cx="36" cy="36" rx="16" ry="18" fill="#FF6B6B"/><ellipse cx="30" cy="36" rx="14" ry="18" fill="#FF5555"/><ellipse cx="24" cy="30" rx="5" ry="6" fill="rgba(255,255,255,0.25)"/></svg>,
+  // Heart with face
+  (s, i) => <svg key={i} width={s} height={s} viewBox="0 0 60 60"><path d="M30,52 Q6,36 6,22 Q6,10 18,10 Q26,10 30,18 Q34,10 42,10 Q54,10 54,22 Q54,36 30,52 Z" fill="#FF6B8A"/><circle cx="24" cy="26" r="2.5" fill="#fff"/><circle cx="36" cy="26" r="2.5" fill="#fff"/><circle cx="24.8" cy="25.5" r="1.2" fill="#2C3E50"/><circle cx="36.8" cy="25.5" r="1.2" fill="#2C3E50"/><path d="M27,34 Q30,37 33,34" fill="none" stroke="#E0476E" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+];
+
+function CuteObject({ index = 0, size = 44, highlighted = false, dimmed = false }) {
+  const itemFn = cuteItems[index % cuteItems.length];
+  return <div style={{ opacity: dimmed ? 0.3 : 1, filter: highlighted ? "drop-shadow(0 0 6px #FFD700)" : "none", transition: "all 0.3s" }}>{itemFn(size, index)}</div>;
+}
+
+// Assign a random shape index per lesson render (stable within session)
+function useShapePool(count) {
+  return useMemo(() => {
+    const pool = [];
+    const indices = Array.from({ length: cuteItems.length }, (_, i) => i);
+    for (let i = indices.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [indices[i], indices[j]] = [indices[j], indices[i]]; }
+    for (let i = 0; i < count; i++) pool.push(indices[i % indices.length]);
+    return pool;
+  }, [count]);
+}
+
+// ===== FLOATING DECORATIONS =====
+function FloatingDecos() {
+  const decos = useMemo(() =>
+    Array.from({ length: 12 }, (_, i) => ({
+      x: Math.random() * 100, y: Math.random() * 100,
+      size: 8 + Math.random() * 16, delay: Math.random() * 5,
+      dur: 4 + Math.random() * 6, shape: i % 4,
+    })), []);
   return (
-    <div style={{ display: "flex", gap: 2 }}>
-      {Array.from({ length: max }, (_, i) => (
-        <svg key={i} width={size} height={size} viewBox="0 0 24 24" fill={i < count ? colors.star : colors.starEmpty}>
-          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-        </svg>
+    <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, overflow: "hidden" }}>
+      {decos.map((d, i) => (
+        <motion.div key={i} animate={{ y: [0, -15, 0], rotate: [0, d.shape === 0 ? 20 : -20, 0] }}
+          transition={{ duration: d.dur, repeat: Infinity, delay: d.delay, ease: "easeInOut" }}
+          style={{ position: "absolute", left: `${d.x}%`, top: `${d.y}%`, opacity: 0.15 }}>
+          {d.shape === 0 && <svg width={d.size} height={d.size} viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" fill={C.yellow}/></svg>}
+          {d.shape === 1 && <svg width={d.size} height={d.size} viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill={C.pink}/></svg>}
+          {d.shape === 2 && <svg width={d.size} height={d.size} viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="4" fill={C.blue} opacity="0.5"/></svg>}
+          {d.shape === 3 && <svg width={d.size} height={d.size} viewBox="0 0 24 24"><path d="M12,21 Q2,14 2,8 Q2,3 7,3 Q10,3 12,6 Q14,3 17,3 Q22,3 22,8 Q22,14 12,21Z" fill={C.coral}/></svg>}
+        </motion.div>
       ))}
     </div>
   );
 }
 
-// ===== Apple/Star shape for animations =====
-function FruitShape({ shape = "apple", size = 36, index = 0, highlighted = false, dimmed = false }) {
-  const s = size;
-  const opacity = dimmed ? 0.3 : 1;
-  if (shape === "star") {
-    return (
-      <svg width={s} height={s} viewBox="0 0 24 24" style={{ opacity }}>
-        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
-          fill={highlighted ? colors.accent : colors.primary} stroke={highlighted ? "#F59E0B" : "#E55555"} strokeWidth="0.5"/>
-      </svg>
-    );
-  }
-  return (
-    <svg width={s} height={s} viewBox="0 0 100 100" style={{ opacity }}>
-      <ellipse cx="50" cy="58" rx="35" ry="38" fill={highlighted ? colors.accent : "#FF6B6B"}/>
-      <ellipse cx="50" cy="58" rx="35" ry="38" fill="none" stroke="#E55555" strokeWidth="2"/>
-      <path d="M50 20 Q55 8 65 12" stroke="#5D8A3C" strokeWidth="3" fill="none" strokeLinecap="round"/>
-      <ellipse cx="42" cy="50" rx="8" ry="10" fill="rgba(255,255,255,0.25)"/>
-    </svg>
-  );
+function Stars({ count = 0, max = 3, size = 22 }) {
+  return <div style={{ display: "flex", gap: 2 }}>{Array.from({ length: max }, (_, i) => (
+    <motion.svg key={i} width={size} height={size} viewBox="0 0 24 24" initial={false}
+      animate={i < count ? { scale: [1, 1.4, 1], rotate: [0, 20, 0] } : {}} transition={{ delay: i * 0.15, duration: 0.4 }}>
+      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" fill={i < count ? C.star : C.starEmpty}/>
+    </motion.svg>
+  ))}</div>;
 }
 
-// ============================================================
-//  ANIMATION COMPONENTS
-// ============================================================
-
-// ----- Make Ten Animation -----
-function MakeTenAnimation({ data, onComplete }) {
-  const [step, setStep] = useState(0);
-  const steps = data.steps;
-  const currentStep = steps[step];
-  const [autoPlay, setAutoPlay] = useState(false);
-
-  const goNext = () => {
-    if (step < steps.length - 1) setStep(s => s + 1);
-    else if (onComplete) onComplete();
-  };
-  const goPrev = () => { if (step > 0) setStep(s => s - 1); };
-
-  useEffect(() => {
-    if (autoPlay && step < steps.length - 1) {
-      const t = setTimeout(goNext, 2500);
-      return () => clearTimeout(t);
-    }
-  }, [step, autoPlay]);
-
-  // Get values from first step
-  const firstStep = steps.find(s => s.action === "show_objects") || {};
-  const leftCount = firstStep.left || 0;
-  const rightCount = firstStep.right || 0;
-  const shape = firstStep.shape || "apple";
-
-  // Get split info
-  const splitStep = steps.find(s => s.action === "split") || {};
-  const splitParts = splitStep.parts || [0, 0];
-
-  // Determine visual state based on current step index
-  const splitDone = step >= steps.findIndex(s => s.action === "split");
-  const moveDone = step >= steps.findIndex(s => s.action === "move_to_left");
-  const tenDone = step >= steps.findIndex(s => s.action === "highlight_ten");
-  const combineDone = step >= steps.findIndex(s => s.action === "combine");
-
-  const leftItems = moveDone ? leftCount + splitParts[0] : leftCount;
-  const rightItems = moveDone ? rightCount - splitParts[0] : rightCount;
-
+// ===== Little Fox Mascot =====
+function Mascot({ mood = "happy", size = 80, message = "" }) {
   return (
-    <div style={{ padding: "16px 0" }}>
-      {/* Visual area */}
-      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 32, minHeight: 180, flexWrap: "wrap" }}>
-        {/* Left group */}
-        <motion.div style={{
-          display: "flex", flexWrap: "wrap", gap: 4, maxWidth: 200, padding: 12,
-          borderRadius: 16, border: tenDone ? `3px solid ${colors.accent}` : `2px dashed ${colors.border}`,
-          background: tenDone ? "rgba(255,230,109,0.15)" : "transparent", justifyContent: "center"
-        }} layout>
-          {Array.from({ length: leftItems }, (_, i) => (
-            <motion.div key={`l-${i}`}
-              initial={i >= leftCount ? { x: 80, opacity: 0 } : { scale: 0 }}
-              animate={{ x: 0, opacity: 1, scale: 1 }}
-              transition={{ delay: i * 0.05, type: "spring", stiffness: 200 }}>
-              <FruitShape shape={shape} size={32} highlighted={tenDone && i < leftItems}/>
-            </motion.div>
-          ))}
-          {tenDone && <div style={{ width: "100%", textAlign: "center", fontWeight: 700, color: colors.primary, fontSize: 18 }}>{leftItems}</div>}
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 10 }}>
+      <svg width={size} height={size} viewBox="0 0 100 100">
+        <polygon points="25,35 15,8 40,28" fill="#FF8C42"/><polygon points="75,35 85,8 60,28" fill="#FF8C42"/>
+        <ellipse cx="50" cy="55" rx="35" ry="32" fill="#FF8C42"/>
+        <ellipse cx="50" cy="62" rx="20" ry="16" fill="#FFF8DC"/>
+        <circle cx="38" cy="48" r="5" fill="#2C3E50"/><circle cx="62" cy="48" r="5" fill="#2C3E50"/>
+        <circle cx="39.5" cy="46.5" r="2" fill="#fff"/><circle cx="63.5" cy="46.5" r="2" fill="#fff"/>
+        <ellipse cx="50" cy="58" rx="4" ry="3" fill="#2C3E50"/>
+        {mood === "happy" && <path d="M40,64 Q50,74 60,64" fill="none" stroke="#E8764A" strokeWidth="2.5" strokeLinecap="round"/>}
+        {mood === "think" && <path d="M42,66 L58,66" stroke="#E8764A" strokeWidth="2.5" strokeLinecap="round"/>}
+        {mood === "wow" && <ellipse cx="50" cy="68" rx="5" ry="6" fill="#E8764A"/>}
+        <ellipse cx="30" cy="56" rx="6" ry="5" fill="#FFB088" opacity="0.5"/>
+        <ellipse cx="70" cy="56" rx="6" ry="5" fill="#FFB088" opacity="0.5"/>
+      </svg>
+      {message && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+          style={{ padding: "10px 16px", background: C.card, borderRadius: "18px 18px 18px 4px",
+            boxShadow: "0 2px 10px rgba(0,0,0,0.08)", fontSize: 15, color: C.text, fontWeight: 600,
+            maxWidth: 280, lineHeight: 1.5, border: `2px solid ${C.border}` }}>
+          {message}
         </motion.div>
-
-        {/* Plus sign */}
-        <span style={{ fontSize: 28, fontWeight: 700, color: colors.text }}>+</span>
-
-        {/* Right group */}
-        <motion.div style={{
-          display: "flex", flexWrap: "wrap", gap: 4, maxWidth: 200, padding: 12,
-          borderRadius: 16, border: `2px dashed ${colors.border}`, justifyContent: "center", minWidth: 60, minHeight: 50
-        }} layout>
-          {splitDone && !moveDone ? (
-            <>
-              <div style={{ display: "flex", gap: 2, padding: 4, borderRadius: 8, background: "rgba(255,107,107,0.1)" }}>
-                {Array.from({ length: splitParts[0] }, (_, i) => (
-                  <motion.div key={`sp0-${i}`} initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
-                    <FruitShape shape={shape} size={28} highlighted/>
-                  </motion.div>
-                ))}
-              </div>
-              <div style={{ display: "flex", gap: 2, padding: 4 }}>
-                {Array.from({ length: splitParts[1] }, (_, i) => (
-                  <motion.div key={`sp1-${i}`} initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
-                    <FruitShape shape={shape} size={28}/>
-                  </motion.div>
-                ))}
-              </div>
-            </>
-          ) : (
-            Array.from({ length: Math.max(0, rightItems) }, (_, i) => (
-              <motion.div key={`r-${i}`} initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: i * 0.05 }}>
-                <FruitShape shape={shape} size={32}/>
-              </motion.div>
-            ))
-          )}
-          {(moveDone && !combineDone) && <div style={{ width: "100%", textAlign: "center", fontWeight: 700, color: colors.secondary, fontSize: 18 }}>{rightItems}</div>}
-        </motion.div>
-      </div>
-
-      {/* Result */}
-      <AnimatePresence>
-        {combineDone && (
-          <motion.div initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-            style={{ textAlign: "center", fontSize: 28, fontWeight: 800, color: colors.primary, margin: "12px 0" }}>
-            {data.steps.find(s => s.action === "combine")?.values?.join(" + ")} = {data.steps.find(s => s.action === "combine")?.result}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Narration */}
-      <motion.div key={step} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-        style={{ textAlign: "center", padding: "12px 20px", margin: "8px auto", maxWidth: 400,
-          background: "rgba(78,205,196,0.1)", borderRadius: 12, color: colors.text, fontSize: 16, fontWeight: 500, lineHeight: 1.6 }}>
-        💡 {currentStep.narration}
-      </motion.div>
-
-      {/* Controls */}
-      <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 12 }}>
-        <button onClick={goPrev} disabled={step === 0}
-          style={{ padding: "8px 20px", borderRadius: 20, border: `2px solid ${colors.border}`,
-            background: colors.card, cursor: step === 0 ? "not-allowed" : "pointer", opacity: step === 0 ? 0.4 : 1, fontSize: 14 }}>
-          ◀ 上一步
-        </button>
-        <button onClick={() => setAutoPlay(!autoPlay)}
-          style={{ padding: "8px 20px", borderRadius: 20, border: "none",
-            background: autoPlay ? colors.secondary : colors.purple, color: "#fff", cursor: "pointer", fontSize: 14 }}>
-          {autoPlay ? "⏸ 暂停" : "▶ 自动播放"}
-        </button>
-        <button onClick={goNext} disabled={step >= steps.length - 1}
-          style={{ padding: "8px 20px", borderRadius: 20, border: "none",
-            background: colors.primary, color: "#fff", cursor: step >= steps.length - 1 ? "not-allowed" : "pointer",
-            opacity: step >= steps.length - 1 ? 0.4 : 1, fontSize: 14 }}>
-          下一步 ▶
-        </button>
-      </div>
-
-      {/* Step indicator */}
-      <div style={{ display: "flex", justifyContent: "center", gap: 6, marginTop: 8 }}>
-        {steps.map((_, i) => (
-          <div key={i} onClick={() => setStep(i)}
-            style={{ width: i === step ? 24 : 8, height: 8, borderRadius: 4, cursor: "pointer", transition: "all 0.3s",
-              background: i <= step ? colors.secondary : colors.border }}/>
-        ))}
-      </div>
+      )}
     </div>
   );
 }
 
-// ----- Number Line Animation -----
+// ============================================================
+//  ANIMATION: MAKE TEN
+// ============================================================
+function MakeTenAnimation({ data, onComplete }) {
+  const [step, setStep] = useState(0);
+  const steps = data.steps;
+  const cur = steps[step];
+  const [auto, setAuto] = useState(false);
+
+  const first = steps.find(s => s.action === "show_objects") || {};
+  const L = first.left || 0, R = first.right || 0;
+  const splitS = steps.find(s => s.action === "split") || {};
+  const parts = splitS.parts || [0, 0];
+  const shapes = useShapePool(L + R);
+
+  const splitI = steps.findIndex(s => s.action === "split");
+  const moveI = steps.findIndex(s => s.action === "move_to_left");
+  const tenI = steps.findIndex(s => s.action === "highlight_ten");
+  const combI = steps.findIndex(s => s.action === "combine");
+  const isSplit = splitI >= 0 && step >= splitI;
+  const isMoved = moveI >= 0 && step >= moveI;
+  const isTen = tenI >= 0 && step >= tenI;
+  const isComb = combI >= 0 && step >= combI;
+
+  const leftN = isMoved ? L + parts[0] : L;
+  const rightN = isMoved ? R - parts[0] : R;
+
+  const goNext = () => { if (step < steps.length - 1) setStep(s => s + 1); else onComplete?.(); };
+  const goPrev = () => { if (step > 0) setStep(s => s - 1); };
+
+  useEffect(() => {
+    if (auto && step < steps.length - 1) { const t = setTimeout(goNext, 2800); return () => clearTimeout(t); }
+    if (auto && step >= steps.length - 1) setAuto(false);
+  }, [step, auto]);
+
+  return <div style={{ padding: "12px 0" }}>
+    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 24, minHeight: 160, flexWrap: "wrap" }}>
+      {/* Left group */}
+      <motion.div layout style={{ display: "flex", flexWrap: "wrap", gap: 3, maxWidth: 200, padding: 10,
+        borderRadius: 20, border: isTen ? `3px solid ${C.yellow}` : `2px dashed ${C.border}`,
+        background: isTen ? "rgba(255,217,61,0.12)" : "transparent", justifyContent: "center", minWidth: 60, minHeight: 50 }}>
+        {Array.from({ length: leftN }, (_, i) => (
+          <motion.div key={`l${i}`} initial={i >= L ? { x: 60, opacity: 0, scale: 0.5 } : { scale: 0 }}
+            animate={{ x: 0, opacity: 1, scale: 1 }} transition={{ delay: i >= L ? 0.3 : i * 0.04, type: "spring", stiffness: 300 }}>
+            <CuteObject index={shapes[i] ?? 0} size={34} highlighted={isTen}/>
+          </motion.div>
+        ))}
+        {isTen && <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} style={{ width: "100%", textAlign: "center", fontWeight: 800, color: C.orange, fontSize: 20 }}>10</motion.div>}
+      </motion.div>
+
+      <span style={{ fontSize: 30, fontWeight: 800, color: C.text }}>+</span>
+
+      {/* Right group */}
+      <motion.div layout style={{ display: "flex", flexWrap: "wrap", gap: 3, maxWidth: 200, padding: 10,
+        borderRadius: 20, border: `2px dashed ${C.border}`, justifyContent: "center", minWidth: 60, minHeight: 50 }}>
+        {isSplit && !isMoved ? (
+          <>
+            <div style={{ display: "flex", gap: 2, padding: 4, borderRadius: 12, background: "rgba(255,140,66,0.12)", border: `1.5px dashed ${C.orange}` }}>
+              {Array.from({ length: parts[0] }, (_, i) => (
+                <motion.div key={`sp0-${i}`} initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: i * 0.1 }}>
+                  <CuteObject index={shapes[L + i] ?? 1} size={30} highlighted/>
+                </motion.div>
+              ))}
+              <span style={{ fontSize: 11, color: C.orange, fontWeight: 700, alignSelf: "center" }}>{parts[0]}</span>
+            </div>
+            <div style={{ display: "flex", gap: 2, padding: 4 }}>
+              {Array.from({ length: parts[1] }, (_, i) => (
+                <motion.div key={`sp1-${i}`} initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 + i * 0.1 }}>
+                  <CuteObject index={shapes[L + parts[0] + i] ?? 2} size={30}/>
+                </motion.div>
+              ))}
+              <span style={{ fontSize: 11, color: C.textLight, fontWeight: 700, alignSelf: "center" }}>{parts[1]}</span>
+            </div>
+          </>
+        ) : (
+          Array.from({ length: Math.max(0, rightN) }, (_, i) => (
+            <motion.div key={`r${i}`} initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: i * 0.04 }}>
+              <CuteObject index={shapes[L + (isMoved ? parts[0] : 0) + i] ?? 3} size={34}/>
+            </motion.div>
+          ))
+        )}
+        {isMoved && !isComb && rightN > 0 && <div style={{ width: "100%", textAlign: "center", fontWeight: 800, color: C.teal, fontSize: 18 }}>{rightN}</div>}
+      </motion.div>
+    </div>
+
+    <AnimatePresence>{isComb && (
+      <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring" }}
+        style={{ textAlign: "center", fontSize: 30, fontWeight: 900, color: C.pink, margin: "8px 0" }}>
+        {steps[combI]?.values?.join(" + ")} = {steps[combI]?.result} 🎉
+      </motion.div>
+    )}</AnimatePresence>
+
+    <Mascot mood={isComb ? "wow" : isTen ? "happy" : "think"} size={56} message={cur.narration}/>
+
+    <AnimControls step={step} total={steps.length} onPrev={goPrev} onNext={goNext} auto={auto} onAutoToggle={() => setAuto(!auto)}/>
+  </div>;
+}
+
+// ============================================================
+//  ANIMATION: COUNTING (with clear count-on)
+// ============================================================
+function CountingAnimation({ data, onComplete }) {
+  const [step, setStep] = useState(0);
+  const steps = data.steps;
+  const cur = steps[step];
+  const first = steps[0] || {};
+  const L = first.left || 0, R = first.right || 0;
+  const total = L + R;
+  const shape = useShapePool(total);
+
+  // Find count_on step for the counting visualization
+  const countOnStep = steps.find(s => s.action === "count_on");
+  const countAllStep = steps.find(s => s.action === "count_all");
+  const showResultStep = steps.findIndex(s => s.action === "show_result" || s.action === "count_on");
+  const isCountPhase = step >= (steps.findIndex(s => s.action === "count_on" || s.action === "count_all"));
+  const isDone = step >= showResultStep && showResultStep >= 0;
+
+  // For count_on, we highlight items one by one
+  const [countHighlight, setCountHighlight] = useState(-1);
+  const startVal = countOnStep?.start || 0;
+  const countSeq = countOnStep?.sequence || countAllStep?.sequence || [];
+
+  useEffect(() => {
+    if (isCountPhase && countSeq.length > 0) {
+      setCountHighlight(-1);
+      let idx = 0;
+      const interval = setInterval(() => {
+        if (idx < countSeq.length) { setCountHighlight(idx); idx++; }
+        else clearInterval(interval);
+      }, 500);
+      return () => clearInterval(interval);
+    }
+  }, [step]);
+
+  const goNext = () => { if (step < steps.length - 1) setStep(s => s + 1); else onComplete?.(); };
+
+  return <div style={{ padding: "12px 0" }}>
+    <div style={{ display: "flex", justifyContent: "center", gap: 4, flexWrap: "wrap", maxWidth: 420, margin: "0 auto" }}>
+      {Array.from({ length: total }, (_, i) => {
+        const isRight = i >= L;
+        const isHighlighted = isCountPhase && countOnStep && isRight && (i - L) <= countHighlight;
+        const isAllHighlighted = isCountPhase && countAllStep && i <= countHighlight;
+        const lit = isHighlighted || isAllHighlighted;
+        return (
+          <motion.div key={i} initial={{ scale: 0, rotate: -90 }} animate={{ scale: 1, rotate: 0 }}
+            transition={{ delay: i * 0.06, type: "spring", stiffness: 250 }}
+            style={{ position: "relative", margin: 2 }}>
+            <CuteObject index={shape[i]} size={40} highlighted={lit} dimmed={isCountPhase && !lit && !isDone}/>
+            {/* Show number badge during count-on */}
+            {isCountPhase && countOnStep && isRight && (i - L) <= countHighlight && (
+              <motion.div initial={{ scale: 0, y: -10 }} animate={{ scale: 1, y: 0 }}
+                style={{ position: "absolute", top: -10, right: -6, background: C.orange, color: "#fff",
+                  borderRadius: "50%", width: 22, height: 22, fontSize: 12, fontWeight: 800,
+                  display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }}>
+                {startVal + (i - L) + 1}
+              </motion.div>
+            )}
+            {isCountPhase && countAllStep && i <= countHighlight && (
+              <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
+                style={{ position: "absolute", top: -10, right: -6, background: C.teal, color: "#fff",
+                  borderRadius: "50%", width: 22, height: 22, fontSize: 12, fontWeight: 800,
+                  display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {i + 1}
+              </motion.div>
+            )}
+          </motion.div>
+        );
+      })}
+    </div>
+
+    {/* Show the counting sequence prominently */}
+    {isCountPhase && countOnStep && (
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+        style={{ display: "flex", justifyContent: "center", gap: 6, margin: "12px 0", flexWrap: "wrap" }}>
+        <span style={{ fontSize: 18, fontWeight: 700, color: C.text }}>{startVal},</span>
+        {countSeq.map((n, i) => (
+          <motion.span key={n} initial={{ scale: 0 }} animate={{ scale: i <= countHighlight ? 1 : 0.5, opacity: i <= countHighlight ? 1 : 0.3 }}
+            style={{ fontSize: i <= countHighlight ? 22 : 16, fontWeight: 800,
+              color: i <= countHighlight ? C.orange : C.textLight, transition: "all 0.3s" }}>
+            {n}{i < countSeq.length - 1 ? "," : "!"}
+          </motion.span>
+        ))}
+      </motion.div>
+    )}
+
+    <Mascot mood={isDone ? "happy" : isCountPhase ? "wow" : "think"} size={56} message={cur.narration}/>
+
+    <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 12 }}>
+      <button onClick={goNext} style={btnStyle(C.green)}>
+        {step >= steps.length - 1 ? "✓ 看完啦" : "下一步 ▶"}
+      </button>
+    </div>
+  </div>;
+}
+
+// ============================================================
+//  ANIMATION: NUMBER LINE
+// ============================================================
 function NumberLineAnimation({ data, onComplete }) {
   const [step, setStep] = useState(0);
   const steps = data.steps;
-  const currentStep = steps[step];
-  const lineStep = steps.find(s => s.action === "draw_line") || { from: 0, to: 20 };
-  const rangeFrom = lineStep.from || 0;
-  const rangeTo = lineStep.to || 20;
+  const cur = steps[step];
+  const lineS = steps.find(s => s.action === "draw_line") || { from: 0, to: 20 };
+  const startS = steps.find(s => s.action === "mark_start");
+  const endS = steps.find(s => s.action === "mark_end");
+  const jumpS = steps.find(s => s.action === "jump" || s.action === "jump_split");
 
-  const startStep = steps.find(s => s.action === "mark_start");
-  const endStep = steps.find(s => s.action === "mark_end");
-  const jumpStep = steps.find(s => s.action === "jump" || s.action === "jump_split");
-  const startPos = startStep?.position ?? 0;
-  const endPos = endStep?.position ?? 0;
-
+  const rf = lineS.from || 0, rt = lineS.to || 20;
+  const sp = startS?.position ?? 0, ep = endS?.position ?? 0;
   const showStart = step >= steps.findIndex(s => s.action === "mark_start");
   const showJump = step >= steps.findIndex(s => s.action === "jump" || s.action === "jump_split");
   const showEnd = step >= steps.findIndex(s => s.action === "mark_end");
 
-  const goNext = () => { if (step < steps.length - 1) setStep(s => s + 1); else if (onComplete) onComplete(); };
+  const jumpN = jumpS?.count || Math.abs(ep - sp);
+  const dir = (jumpS?.direction === "left") ? -1 : 1;
+  const [animJump, setAnimJump] = useState(0);
+
+  useEffect(() => {
+    if (showJump) {
+      setAnimJump(0);
+      let i = 0;
+      const iv = setInterval(() => { i++; setAnimJump(i); if (i >= jumpN) clearInterval(iv); }, 400);
+      return () => clearInterval(iv);
+    }
+  }, [step]);
+
+  const W = 600, H = 130, pad = 40;
+  const nx = (n) => pad + ((n - rf) / (rt - rf)) * (W - 2 * pad);
+
+  const goNext = () => { if (step < steps.length - 1) setStep(s => s + 1); else onComplete?.(); };
   const goPrev = () => { if (step > 0) setStep(s => s - 1); };
 
-  const W = 580, H = 120, pad = 30;
-  const numToX = (n) => pad + ((n - rangeFrom) / (rangeTo - rangeFrom)) * (W - 2 * pad);
+  return <div style={{ padding: "12px 0" }}>
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", maxWidth: 580, display: "block", margin: "0 auto" }}>
+      {/* Line */}
+      <line x1={pad - 5} y1={65} x2={W - pad + 5} y2={65} stroke={C.text} strokeWidth={2.5} strokeLinecap="round"/>
+      {/* Ticks */}
+      {Array.from({ length: rt - rf + 1 }, (_, i) => {
+        const n = rf + i, x = nx(n);
+        const major = n % 5 === 0 || n === sp || n === ep;
+        return <g key={n}>
+          <line x1={x} y1={58} x2={x} y2={72} stroke={C.text} strokeWidth={major ? 2 : 0.8} opacity={major ? 1 : 0.4}/>
+          {major && <text x={x} y={86} textAnchor="middle" fontSize={11} fill={C.text} fontWeight={600}>{n}</text>}
+        </g>;
+      })}
+      {/* Start */}
+      {showStart && <motion.g initial={{ scale: 0 }} animate={{ scale: 1 }}>
+        <circle cx={nx(sp)} cy={65} r={10} fill={C.pink} stroke="#fff" strokeWidth={2}/>
+        <text x={nx(sp)} y={48} textAnchor="middle" fontSize={15} fontWeight={800} fill={C.pink}>{sp}</text>
+      </motion.g>}
+      {/* Jump arcs */}
+      {showJump && Array.from({ length: Math.min(animJump, jumpN) }, (_, i) => {
+        const fn = sp + dir * i, tn = sp + dir * (i + 1);
+        const fx = nx(fn), tx = nx(tn), mx = (fx + tx) / 2;
+        return <motion.g key={i} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          <path d={`M${fx},58 Q${mx},${22} ${tx},58`} fill="none" stroke={C.blue} strokeWidth={2.5} strokeLinecap="round"/>
+          <circle cx={tx} cy={58} r={3} fill={C.blue}/>
+          <text x={tx} y={16} textAnchor="middle" fontSize={12} fontWeight={700} fill={C.blue}>{tn}</text>
+        </motion.g>;
+      })}
+      {/* End marker */}
+      {showEnd && <motion.g initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring" }}>
+        <circle cx={nx(ep)} cy={65} r={13} fill={C.green} stroke="#fff" strokeWidth={3}/>
+        <text x={nx(ep)} y={105} textAnchor="middle" fontSize={16} fontWeight={900} fill={C.green}>{ep}</text>
+      </motion.g>}
+    </svg>
 
-  const jumpCount = jumpStep?.count || (Math.abs(endPos - startPos));
-  const dir = (jumpStep?.direction === "left") ? -1 : 1;
-
-  return (
-    <div style={{ padding: "16px 0" }}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", maxWidth: 600, display: "block", margin: "0 auto" }}>
-        {/* Number line */}
-        <line x1={pad} y1={60} x2={W - pad} y2={60} stroke={colors.text} strokeWidth={2}/>
-        {/* Tick marks */}
-        {Array.from({ length: rangeTo - rangeFrom + 1 }, (_, i) => {
-          const n = rangeFrom + i;
-          const x = numToX(n);
-          const isMajor = n % 5 === 0 || n === startPos || n === endPos;
-          return (
-            <g key={n}>
-              <line x1={x} y1={54} x2={x} y2={66} stroke={colors.text} strokeWidth={isMajor ? 2 : 1}/>
-              {isMajor && <text x={x} y={80} textAnchor="middle" fontSize={11} fill={colors.text} fontWeight={500}>{n}</text>}
-            </g>
-          );
-        })}
-        {/* Start marker */}
-        {showStart && (
-          <motion.g initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
-            <circle cx={numToX(startPos)} cy={60} r={8} fill={colors.primary}/>
-            <text x={numToX(startPos)} y={45} textAnchor="middle" fontSize={14} fontWeight={700} fill={colors.primary}>{startPos}</text>
-          </motion.g>
-        )}
-        {/* Jump arcs */}
-        {showJump && Array.from({ length: jumpCount }, (_, i) => {
-          const fromN = startPos + dir * i;
-          const toN = startPos + dir * (i + 1);
-          const fx = numToX(fromN), tx = numToX(toN);
-          const mx = (fx + tx) / 2;
-          return (
-            <motion.path key={i} d={`M${fx},55 Q${mx},${25 - i * 2} ${tx},55`}
-              fill="none" stroke={colors.secondary} strokeWidth={2} strokeDasharray="4 2"
-              initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ delay: i * 0.3, duration: 0.4 }}/>
-          );
-        })}
-        {/* End marker */}
-        {showEnd && (
-          <motion.g initial={{ scale: 0 }} animate={{ scale: 1 }}>
-            <circle cx={numToX(endPos)} cy={60} r={10} fill={colors.secondary} stroke="#fff" strokeWidth={2}/>
-            <text x={numToX(endPos)} y={100} textAnchor="middle" fontSize={14} fontWeight={700} fill={colors.secondary}>{endPos}</text>
-          </motion.g>
-        )}
-      </svg>
-
-      <motion.div key={step} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-        style={{ textAlign: "center", padding: "12px 20px", margin: "8px auto", maxWidth: 400,
-          background: "rgba(96,165,250,0.1)", borderRadius: 12, color: colors.text, fontSize: 16, fontWeight: 500 }}>
-        📏 {currentStep.narration}
-      </motion.div>
-
-      <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 12 }}>
-        <button onClick={goPrev} disabled={step === 0}
-          style={{ padding: "8px 20px", borderRadius: 20, border: `2px solid ${colors.border}`, background: colors.card, cursor: step === 0 ? "not-allowed" : "pointer", opacity: step === 0 ? 0.4 : 1, fontSize: 14 }}>
-          ◀ 上一步</button>
-        <button onClick={goNext}
-          style={{ padding: "8px 20px", borderRadius: 20, border: "none", background: colors.blue, color: "#fff", cursor: "pointer", fontSize: 14 }}>
-          {step >= steps.length - 1 ? "✓ 完成" : "下一步 ▶"}</button>
-      </div>
-    </div>
-  );
+    <Mascot mood={showEnd ? "happy" : showJump ? "wow" : "think"} size={56} message={cur.narration}/>
+    <AnimControls step={step} total={steps.length} onPrev={goPrev} onNext={goNext}/>
+  </div>;
 }
 
-// ----- Counting Animation -----
-function CountingAnimation({ data, onComplete }) {
-  const [step, setStep] = useState(0);
-  const steps = data.steps;
-  const currentStep = steps[step];
-  const firstStep = steps[0] || {};
-  const left = firstStep.left || 0;
-  const right = firstStep.right || 0;
-  const shape = firstStep.shape || "apple";
-  const total = left + right;
-
-  const countStep = steps.find(s => s.action === "count_on" || s.action === "count_all");
-  const showResult = step >= steps.findIndex(s => s.action === "show_result" || s.action === "count_on");
-
-  const goNext = () => { if (step < steps.length - 1) setStep(s => s + 1); else if (onComplete) onComplete(); };
-
-  return (
-    <div style={{ padding: "16px 0" }}>
-      <div style={{ display: "flex", justifyContent: "center", gap: 4, flexWrap: "wrap", maxWidth: 400, margin: "0 auto" }}>
-        {Array.from({ length: total }, (_, i) => (
-          <motion.div key={i} initial={{ scale: 0, rotate: -180 }} animate={{ scale: 1, rotate: 0 }}
-            transition={{ delay: showResult ? i * 0.1 : i * 0.05, type: "spring" }}
-            style={{ position: "relative" }}>
-            <FruitShape shape={shape} size={36}/>
-            {showResult && (
-              <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: i * 0.1 + 0.3 }}
-                style={{ position: "absolute", top: -8, right: -4, background: colors.secondary, color: "#fff",
-                  borderRadius: "50%", width: 18, height: 18, fontSize: 10, fontWeight: 700,
-                  display: "flex", alignItems: "center", justifyContent: "center" }}>
-                {i + 1}
-              </motion.span>
-            )}
-          </motion.div>
-        ))}
-      </div>
-
-      <motion.div key={step} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-        style={{ textAlign: "center", padding: "12px 20px", margin: "12px auto", maxWidth: 400,
-          background: "rgba(52,211,153,0.1)", borderRadius: 12, color: colors.text, fontSize: 16, fontWeight: 500 }}>
-        🔢 {currentStep.narration}
-      </motion.div>
-
-      <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 12 }}>
-        <button onClick={goNext}
-          style={{ padding: "8px 24px", borderRadius: 20, border: "none",
-            background: colors.green, color: "#fff", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>
-          {step >= steps.length - 1 ? "✓ 完成" : "下一步 ▶"}</button>
-      </div>
-    </div>
-  );
-}
-
-// ----- Animation Router -----
+// ===== Animation Router =====
 function AnimationPlayer({ methodData, onComplete }) {
-  const { type } = methodData;
-  const props = { data: methodData, onComplete };
-  switch (type) {
-    case "make_ten": return <MakeTenAnimation {...props}/>;
-    case "number_line": return <NumberLineAnimation {...props}/>;
-    case "counting": return <CountingAnimation {...props}/>;
-    case "break_ten": return <MakeTenAnimation {...props}/>; // reuse with minor diff
-    default: return <CountingAnimation {...props}/>;
+  switch (methodData.type) {
+    case "make_ten": case "break_ten": return <MakeTenAnimation data={methodData} onComplete={onComplete}/>;
+    case "number_line": return <NumberLineAnimation data={methodData} onComplete={onComplete}/>;
+    case "counting": return <CountingAnimation data={methodData} onComplete={onComplete}/>;
+    default: return <CountingAnimation data={methodData} onComplete={onComplete}/>;
   }
 }
 
-// ============================================================
-//  EXERCISE / GAME COMPONENTS
-// ============================================================
+// ===== Shared Controls =====
+function AnimControls({ step, total, onPrev, onNext, auto, onAutoToggle }) {
+  return <div style={{ marginTop: 12 }}>
+    <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
+      {onPrev && <button onClick={onPrev} disabled={step === 0} style={{ ...btnStyle(C.border), color: C.text, opacity: step === 0 ? 0.3 : 1 }}>◀ 上一步</button>}
+      {onAutoToggle && <button onClick={onAutoToggle} style={btnStyle(auto ? C.teal : C.purple)}>{auto ? "⏸ 暂停" : "▶ 自动"}</button>}
+      <button onClick={onNext} style={btnStyle(step >= total - 1 ? C.green : C.blue)}>{step >= total - 1 ? "✓ 完成" : "下一步 ▶"}</button>
+    </div>
+    <div style={{ display: "flex", justifyContent: "center", gap: 5, marginTop: 8 }}>
+      {Array.from({ length: total }, (_, i) => (
+        <div key={i} style={{ width: i === step ? 22 : 8, height: 8, borderRadius: 4, transition: "all 0.3s",
+          background: i <= step ? C.teal : C.border }}/>
+      ))}
+    </div>
+  </div>;
+}
 
-function ExerciseGame({ exercises, onComplete }) {
+const btnStyle = (bg) => ({
+  padding: "9px 20px", borderRadius: 22, border: "none", background: bg, color: "#fff",
+  fontSize: 14, fontWeight: 700, cursor: "pointer", boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
+});
+
+// ============================================================
+//  EXERCISE GAME (random from backend)
+// ============================================================
+function ExerciseGame({ lessonId, exerciseCount = 10, onComplete, username = "同学" }) {
+  const [exercises, setExercises] = useState(null);
   const [current, setCurrent] = useState(0);
   const [answer, setAnswer] = useState("");
-  const [result, setResult] = useState(null); // null | { correct, hints, solutions }
+  const [result, setResult] = useState(null);
   const [score, setScore] = useState({ correct: 0, total: 0 });
   const [showSolution, setShowSolution] = useState(false);
   const [timeLeft, setTimeLeft] = useState(null);
-  const [gameStarted, setGameStarted] = useState(false);
+  const [started, setStarted] = useState(false);
   const inputRef = useRef(null);
 
-  const ex = exercises[current];
-  if (!ex) return null;
-
-  const startGame = () => { setGameStarted(true); setTimeLeft(120); };
+  // Fetch random exercises
+  useEffect(() => {
+    fetch(`${API}/lessons/${lessonId}/random-exercises?count=${exerciseCount}`)
+      .then(r => r.json()).then(setExercises);
+  }, [lessonId]);
 
   useEffect(() => {
-    if (!gameStarted || timeLeft === null || timeLeft <= 0) return;
-    const t = setInterval(() => setTimeLeft(v => v - 1), 1000);
+    if (!started || timeLeft <= 0) return;
+    const t = setInterval(() => setTimeLeft(v => Math.max(0, v - 1)), 1000);
     return () => clearInterval(t);
-  }, [gameStarted, timeLeft]);
+  }, [started, timeLeft]);
 
-  const checkAnswer = async (ans) => {
-    const finalAns = ans || answer;
-    if (!finalAns.trim()) return;
-    const res = { correct: String(finalAns).trim() === String(ex.correct_answer).trim(), correct_answer: ex.correct_answer, hints: ex.hints || [], solutions: ex.solutions || [] };
-    setResult(res);
-    setScore(s => ({ correct: s.correct + (res.correct ? 1 : 0), total: s.total + 1 }));
+  // All hooks above — safe to early-return now
+  if (!exercises) return <div style={{ textAlign: "center", padding: 40, color: C.textLight }}>加载题目中...</div>;
+
+  const ex = exercises[current];
+  const startGame = () => { setStarted(true); setTimeLeft(150); };
+
+  const checkAns = (ans) => {
+    const a = ans || answer;
+    if (!a.toString().trim()) return;
+    const correct = String(a).trim() === String(ex.correct_answer).trim();
+    setResult({ correct, hints: ex.hints || [], solutions: ex.solutions || [] });
+    setScore(s => ({ correct: s.correct + (correct ? 1 : 0), total: s.total + 1 }));
   };
 
-  const nextQuestion = () => {
-    if (current + 1 >= exercises.length) {
-      onComplete?.(score);
-      return;
-    }
-    setCurrent(c => c + 1);
-    setAnswer("");
-    setResult(null);
-    setShowSolution(false);
+  const next = () => {
+    if (current + 1 >= exercises.length || timeLeft <= 0) { onComplete?.(score); return; }
+    setCurrent(c => c + 1); setAnswer(""); setResult(null); setShowSolution(false);
     setTimeout(() => inputRef.current?.focus(), 100);
   };
 
-  if (!gameStarted) {
-    return (
-      <div style={{ textAlign: "center", padding: 40 }}>
-        <div style={{ fontSize: 48, marginBottom: 16 }}>🎮</div>
-        <h3 style={{ margin: "0 0 8px", color: colors.text, fontWeight: 700, fontSize: 22 }}>趣味闯关</h3>
-        <p style={{ color: colors.textLight, margin: "0 0 24px" }}>共 {exercises.length} 题，120秒内完成挑战</p>
-        <button onClick={startGame}
-          style={{ padding: "14px 48px", borderRadius: 28, border: "none", fontSize: 18, fontWeight: 700,
-            background: `linear-gradient(135deg, ${colors.primary}, ${colors.purple})`, color: "#fff", cursor: "pointer" }}>
+  if (!started) return (
+    <div style={{ textAlign: "center", padding: 40 }}>
+      <Mascot mood="happy" size={70} message={`${username}，准备好了吗？我们来挑战吧！`}/>
+      <div style={{ marginTop: 20 }}>
+        <p style={{ color: C.textLight, margin: "0 0 16px" }}>从题库中随机抽取 {exercises.length} 道题</p>
+        <button onClick={startGame} style={{ ...btnStyle(`linear-gradient(135deg, ${C.pink}, ${C.purple})`),
+          padding: "16px 48px", fontSize: 20, borderRadius: 30, background: `linear-gradient(135deg, ${C.pink}, ${C.purple})` }}>
           开始挑战 🚀
         </button>
       </div>
-    );
-  }
+    </div>
+  );
 
+  // Completed
   if (timeLeft <= 0 || (result && current + 1 >= exercises.length)) {
-    const finalScore = score;
-    const stars = finalScore.correct === exercises.length ? 3 : finalScore.correct >= exercises.length * 0.7 ? 2 : finalScore.correct >= exercises.length * 0.4 ? 1 : 0;
+    const s = score; const pct = s.total > 0 ? s.correct / s.total : 0;
+    const stars = pct >= 0.9 ? 3 : pct >= 0.65 ? 2 : pct >= 0.3 ? 1 : 0;
     return (
-      <div style={{ textAlign: "center", padding: 40 }}>
+      <div style={{ textAlign: "center", padding: 30 }}>
         <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring" }}>
-          <div style={{ fontSize: 64, marginBottom: 12 }}>{stars >= 2 ? "🎉" : stars >= 1 ? "👍" : "💪"}</div>
-          <h3 style={{ margin: "0 0 8px", color: colors.text, fontSize: 24, fontWeight: 700 }}>
-            {stars >= 2 ? "太棒了！" : stars >= 1 ? "不错哦！" : "继续加油！"}
-          </h3>
-          <div style={{ display: "flex", justifyContent: "center", margin: "12px 0" }}><Stars count={stars}/></div>
-          <p style={{ color: colors.textLight, fontSize: 16 }}>答对 {finalScore.correct} / {finalScore.total} 题</p>
-          <button onClick={() => onComplete?.(finalScore)}
-            style={{ marginTop: 20, padding: "12px 36px", borderRadius: 24, border: "none",
-              background: colors.secondary, color: "#fff", fontSize: 16, fontWeight: 600, cursor: "pointer" }}>
-            返回课时
-          </button>
+          <Mascot mood={stars >= 2 ? "wow" : "happy"} size={80} message={stars >= 2 ? `${username}太厉害了！你是数学小天才！` : stars >= 1 ? `${username}，不错哦，继续加油！` : `${username}，别灰心，多练习就好啦！`}/>
+          <div style={{ display: "flex", justifyContent: "center", margin: "16px 0" }}><Stars count={stars} size={36}/></div>
+          <p style={{ color: C.text, fontSize: 18, fontWeight: 700 }}>答对 {s.correct} / {s.total} 题</p>
+          <button onClick={() => onComplete?.(s)} style={{ ...btnStyle(C.teal), marginTop: 16, padding: "12px 36px", fontSize: 16 }}>返回</button>
         </motion.div>
       </div>
     );
   }
 
-  return (
-    <div style={{ padding: "16px 0" }}>
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <span style={{ fontSize: 14, color: colors.textLight }}>第 {current + 1}/{exercises.length} 题</span>
-        <span style={{ fontSize: 14, fontWeight: 600, color: timeLeft < 30 ? colors.primary : colors.text }}>
-          ⏱ {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, "0")}
-        </span>
-        <Stars count={score.correct >= 3 ? 3 : score.correct >= 2 ? 2 : score.correct >= 1 ? 1 : 0}/>
-      </div>
-
-      {/* Progress bar */}
-      <div style={{ height: 6, background: colors.border, borderRadius: 3, marginBottom: 20 }}>
-        <motion.div animate={{ width: `${((current + 1) / exercises.length) * 100}%` }}
-          style={{ height: "100%", background: `linear-gradient(90deg, ${colors.secondary}, ${colors.green})`, borderRadius: 3 }}/>
-      </div>
-
-      {/* Question */}
-      <motion.div key={current} initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }}
-        style={{ textAlign: "center", padding: 24, background: colors.card, borderRadius: 20,
-          boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}>
-        <p style={{ fontSize: 28, fontWeight: 800, color: colors.text, margin: "0 0 20px", letterSpacing: 2 }}>
-          {ex.question}
-        </p>
-
-        {ex.type === "choice" && ex.options?.length > 0 ? (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, maxWidth: 300, margin: "0 auto" }}>
-            {ex.options.map((opt, i) => (
-              <button key={i} onClick={() => { setAnswer(opt); checkAnswer(opt); }}
-                disabled={!!result}
-                style={{
-                  padding: "12px 16px", borderRadius: 14, fontSize: 20, fontWeight: 700, cursor: result ? "default" : "pointer",
-                  border: result && String(opt) === String(ex.correct_answer) ? `3px solid ${colors.green}` :
-                    result && String(opt) === String(answer) && !result.correct ? `3px solid ${colors.primary}` : `2px solid ${colors.border}`,
-                  background: result && String(opt) === String(ex.correct_answer) ? "rgba(52,211,153,0.15)" :
-                    result && String(opt) === String(answer) && !result.correct ? "rgba(255,107,107,0.1)" : colors.card,
-                  color: colors.text,
-                }}>
-                {opt}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div style={{ display: "flex", justifyContent: "center", gap: 12, alignItems: "center" }}>
-            <input ref={inputRef} type="number" value={answer} onChange={e => setAnswer(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && checkAnswer()}
-              disabled={!!result} autoFocus
-              style={{ width: 100, fontSize: 28, fontWeight: 700, textAlign: "center", padding: "8px 12px",
-                borderRadius: 14, border: `3px solid ${result ? (result.correct ? colors.green : colors.primary) : colors.border}`,
-                outline: "none", color: colors.text, background: result ? (result.correct ? "rgba(52,211,153,0.1)" : "rgba(255,107,107,0.1)") : "#fff" }}/>
-            {!result && (
-              <button onClick={() => checkAnswer()}
-                style={{ padding: "10px 24px", borderRadius: 14, border: "none",
-                  background: colors.primary, color: "#fff", fontSize: 16, fontWeight: 700, cursor: "pointer" }}>
-                确认
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Result feedback */}
-        <AnimatePresence>
-          {result && (
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} style={{ marginTop: 16 }}>
-              {result.correct ? (
-                <p style={{ color: colors.green, fontSize: 20, fontWeight: 700, margin: 0 }}>✅ 答对了！太棒了！</p>
-              ) : (
-                <div>
-                  <p style={{ color: colors.primary, fontSize: 18, fontWeight: 600, margin: "0 0 8px" }}>
-                    ❌ 再想想～正确答案是 {result.correct_answer}
-                  </p>
-                  {result.hints?.length > 0 && !showSolution && (
-                    <button onClick={() => setShowSolution(true)}
-                      style={{ padding: "6px 16px", borderRadius: 12, border: `1px solid ${colors.purple}`,
-                        background: "transparent", color: colors.purple, fontSize: 14, cursor: "pointer" }}>
-                      💡 看看解题思路
-                    </button>
-                  )}
-                  {showSolution && result.hints?.map((h, i) => (
-                    <p key={i} style={{ color: colors.textLight, fontSize: 14, margin: "4px 0" }}>💡 {h}</p>
-                  ))}
-                </div>
-              )}
-              <button onClick={nextQuestion}
-                style={{ marginTop: 12, padding: "10px 32px", borderRadius: 20, border: "none",
-                  background: colors.secondary, color: "#fff", fontSize: 16, fontWeight: 600, cursor: "pointer" }}>
-                {current + 1 >= exercises.length ? "查看成绩" : "下一题 ▶"}
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
+  return <div style={{ padding: "12px 0" }}>
+    {/* Header */}
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+      <span style={{ fontSize: 13, color: C.textLight, fontWeight: 600 }}>第 {current + 1}/{exercises.length}</span>
+      <span style={{ fontSize: 14, fontWeight: 700, color: timeLeft < 30 ? C.coral : C.text, padding: "4px 12px", background: timeLeft < 30 ? "rgba(255,111,97,0.1)" : C.border, borderRadius: 12 }}>
+        ⏱ {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, "0")}
+      </span>
+      <span style={{ fontSize: 13, color: C.green, fontWeight: 700 }}>✓ {score.correct}</span>
     </div>
-  );
+    {/* Progress */}
+    <div style={{ height: 6, background: C.border, borderRadius: 3, marginBottom: 16 }}>
+      <motion.div animate={{ width: `${((current + 1) / exercises.length) * 100}%` }}
+        style={{ height: "100%", background: `linear-gradient(90deg, ${C.teal}, ${C.green})`, borderRadius: 3 }}/>
+    </div>
+    {/* Question card */}
+    <motion.div key={current} initial={{ x: 40, opacity: 0 }} animate={{ x: 0, opacity: 1 }}
+      style={{ textAlign: "center", padding: "28px 20px", background: C.card, borderRadius: 24,
+        boxShadow: "0 4px 20px rgba(0,0,0,0.06)", border: `2px solid ${C.border}` }}>
+      <p style={{ fontSize: 32, fontWeight: 900, color: C.text, margin: "0 0 20px", letterSpacing: 3 }}>{ex.question}</p>
+
+      {ex.type === "choice" && ex.options?.length > 0 ? (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, maxWidth: 280, margin: "0 auto" }}>
+          {ex.options.map((opt, i) => {
+            const isCorrect = result && String(opt) === String(ex.correct_answer);
+            const isWrong = result && String(opt) === String(answer) && !result.correct;
+            return <button key={i} onClick={() => { setAnswer(opt); checkAns(opt); }} disabled={!!result}
+              style={{ padding: "14px", borderRadius: 16, fontSize: 22, fontWeight: 800, cursor: result ? "default" : "pointer",
+                border: isCorrect ? `3px solid ${C.green}` : isWrong ? `3px solid ${C.coral}` : `2px solid ${C.border}`,
+                background: isCorrect ? "rgba(107,203,119,0.12)" : isWrong ? "rgba(255,111,97,0.1)" : "#fff", color: C.text }}>
+              {opt}
+            </button>;
+          })}
+        </div>
+      ) : (
+        <div style={{ display: "flex", justifyContent: "center", gap: 10, alignItems: "center" }}>
+          <input ref={inputRef} type="number" value={answer} onChange={e => setAnswer(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && checkAns()} disabled={!!result} autoFocus
+            style={{ width: 100, fontSize: 32, fontWeight: 800, textAlign: "center", padding: "8px 12px", borderRadius: 16,
+              border: `3px solid ${result ? (result.correct ? C.green : C.coral) : C.border}`, outline: "none", color: C.text,
+              background: result ? (result.correct ? "rgba(107,203,119,0.08)" : "rgba(255,111,97,0.06)") : "#fff" }}/>
+          {!result && <button onClick={() => checkAns()} style={btnStyle(C.pink)}>确认</button>}
+        </div>
+      )}
+
+      <AnimatePresence>{result && (
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} style={{ marginTop: 16 }}>
+          {result.correct ? (
+            <motion.p initial={{ scale: 0.5 }} animate={{ scale: 1 }} style={{ color: C.green, fontSize: 20, fontWeight: 800, margin: 0 }}>
+              ✅ {username} 答对啦！太棒了！
+            </motion.p>
+          ) : (
+            <div>
+              <p style={{ color: C.coral, fontSize: 17, fontWeight: 700, margin: "0 0 8px" }}>再想想～答案是 <b>{ex.correct_answer}</b></p>
+              {result.hints?.length > 0 && !showSolution && (
+                <button onClick={() => setShowSolution(true)} style={{ ...btnStyle(C.purple), padding: "5px 14px", fontSize: 13 }}>💡 看解题思路</button>
+              )}
+              {showSolution && result.hints.map((h, i) => <p key={i} style={{ color: C.textLight, fontSize: 13, margin: "4px 0" }}>💡 {h}</p>)}
+            </div>
+          )}
+          <button onClick={next} style={{ ...btnStyle(C.teal), marginTop: 10, padding: "10px 30px" }}>
+            {current + 1 >= exercises.length ? "看成绩" : "下一题 ▶"}
+          </button>
+        </motion.div>
+      )}</AnimatePresence>
+    </motion.div>
+  </div>;
 }
 
 // ============================================================
-//  PAGE COMPONENTS
+//  PAGES
 // ============================================================
-
-// ----- Course Map (Home) -----
-function CourseMap({ onSelectLesson }) {
-  const { data: courses, loading: cl } = useFetch("/courses?status=published");
+function CourseMap({ onSelectLesson, username, onSetUsername }) {
+  const { data: courses, loading } = useFetch("/courses?status=published");
   const [lessons, setLessons] = useState([]);
   const [progress, setProgress] = useState([]);
-  const userId = "student-001";
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState(username);
 
   useEffect(() => {
     if (courses?.length) {
       fetch(API + `/courses/${courses[0].id}/lessons`).then(r => r.json()).then(setLessons);
-      fetch(API + `/progress/${userId}`).then(r => r.json()).then(setProgress);
+      fetch(API + `/progress/student-001`).then(r => r.json()).then(setProgress);
     }
   }, [courses]);
 
-  const getStars = (lessonId) => {
-    const p = progress.find(pp => pp.lesson_id === lessonId);
-    return p?.stars || 0;
+  const getStars = (lid) => (progress.find(p => p.lesson_id === lid))?.stars || 0;
+
+  if (loading) return <div style={{ textAlign: "center", padding: 60 }}><Mascot mood="think" size={80} message="正在准备课程..."/></div>;
+
+  const emojis = ["🐣","🌈","🎵","🌸","🍎","🧩","🎲","🔢"];
+
+  const commitName = () => {
+    onSetUsername(nameInput);
+    setEditingName(false);
   };
 
-  if (cl) return <div style={{ textAlign: "center", padding: 60, color: colors.textLight }}>加载中...</div>;
-
-  return (
-    <div style={{ padding: "20px 16px", maxWidth: 480, margin: "0 auto" }}>
-      <div style={{ textAlign: "center", marginBottom: 24 }}>
-        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800, color: colors.text }}>🧮 数学小天地</h1>
-        <p style={{ margin: "4px 0 0", color: colors.textLight, fontSize: 14 }}>{courses?.[0]?.title || "加减法启蒙"}</p>
-      </div>
-
-      <div style={{ position: "relative" }}>
-        {/* Path line */}
-        <div style={{ position: "absolute", left: "50%", top: 0, bottom: 0, width: 3, background: colors.border, transform: "translateX(-50%)", zIndex: 0 }}/>
-
-        {lessons.map((lesson, i) => {
-          const stars = getStars(lesson.id);
-          const isLocked = i > 0 && getStars(lessons[i - 1]?.id) === 0 && lesson.status === "published";
-          const side = i % 2 === 0 ? "left" : "right";
-
-          return (
-            <motion.div key={lesson.id} initial={{ opacity: 0, x: side === "left" ? -30 : 30 }}
-              animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.1 }}
-              style={{ display: "flex", justifyContent: side === "left" ? "flex-start" : "flex-end",
-                position: "relative", zIndex: 1, marginBottom: 12 }}>
-
-              <button onClick={() => !isLocked && onSelectLesson(lesson.id)}
-                disabled={isLocked}
-                style={{
-                  width: "44%", padding: "14px 16px", borderRadius: 18,
-                  border: stars > 0 ? `2px solid ${colors.secondary}` : `2px solid ${colors.border}`,
-                  background: isLocked ? "#f5f0e8" : colors.card,
-                  cursor: isLocked ? "not-allowed" : "pointer",
-                  opacity: isLocked ? 0.5 : 1,
-                  boxShadow: stars > 0 ? `0 2px 8px rgba(78,205,196,0.2)` : "0 1px 4px rgba(0,0,0,0.05)",
-                  textAlign: "left", transition: "transform 0.2s",
-                }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: 20, marginRight: 8 }}>
-                    {isLocked ? "🔒" : stars >= 3 ? "🌟" : stars > 0 ? "⭐" : ["📚","✏️","🎯","📐","🍎","🧩","🎲","🔢"][i] || "📖"}
-                  </span>
-                  <Stars count={stars} size={14}/>
-                </div>
-                <p style={{ margin: "6px 0 0", fontSize: 14, fontWeight: 600, color: colors.text }}>{lesson.title}</p>
-                <p style={{ margin: "2px 0 0", fontSize: 11, color: colors.textLight }}>{lesson.description}</p>
-              </button>
-            </motion.div>
-          );
-        })}
-      </div>
+  return <div style={{ padding: "20px 16px", maxWidth: 460, margin: "0 auto", position: "relative", zIndex: 1 }}>
+    {/* Name badge */}
+    <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+      {editingName ? (
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input
+            autoFocus
+            value={nameInput}
+            onChange={e => setNameInput(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") commitName(); if (e.key === "Escape") setEditingName(false); }}
+            maxLength={8}
+            style={{ width: 80, fontSize: 15, fontWeight: 700, textAlign: "center", padding: "4px 8px",
+              borderRadius: 12, border: `2px solid ${C.pink}`, outline: "none", color: C.text }}
+          />
+          <button onClick={commitName}
+            style={{ ...btnStyle(C.pink), padding: "4px 12px", fontSize: 13, borderRadius: 12 }}>确定</button>
+        </div>
+      ) : (
+        <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+          onClick={() => { setNameInput(username); setEditingName(true); }}
+          style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 20,
+            border: `2px solid ${C.border}`, background: C.card, cursor: "pointer",
+            fontSize: 14, fontWeight: 700, color: C.text, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+          <span>👤</span>
+          <span>{username}</span>
+          <span style={{ fontSize: 11, color: C.textLight }}>✏️</span>
+        </motion.button>
+      )}
     </div>
-  );
+
+    <div style={{ textAlign: "center", marginBottom: 20 }}>
+      <Mascot mood="happy" size={72} message={`欢迎来到数学小天地，${username}！选一个开始学习吧～`}/>
+    </div>
+    <h2 style={{ textAlign: "center", fontSize: 22, fontWeight: 800, color: C.text, margin: "0 0 4px" }}>🧮 {courses?.[0]?.title || "数学启蒙"}</h2>
+    <p style={{ textAlign: "center", fontSize: 13, color: C.textLight, margin: "0 0 20px" }}>{courses?.[0]?.description}</p>
+
+    <div style={{ position: "relative" }}>
+      <div style={{ position: "absolute", left: "50%", top: 0, bottom: 0, width: 4, background: `linear-gradient(180deg, ${C.yellow}, ${C.teal}, ${C.pink})`, transform: "translateX(-50%)", borderRadius: 2, zIndex: 0, opacity: 0.3 }}/>
+      {lessons.filter(l => l.status === "published").map((lesson, i) => {
+        const stars = getStars(lesson.id);
+        const prevStars = i > 0 ? getStars(lessons[i - 1]?.id) : 1;
+        const locked = i > 0 && prevStars === 0;
+        const side = i % 2 === 0 ? "left" : "right";
+        const colors = [C.pink, C.blue, C.green, C.orange, C.purple, C.teal, C.coral, C.yellow];
+        const accentColor = colors[i % colors.length];
+
+        return <motion.div key={lesson.id} initial={{ opacity: 0, x: side === "left" ? -30 : 30 }}
+          animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
+          style={{ display: "flex", justifyContent: side === "left" ? "flex-start" : "flex-end", position: "relative", zIndex: 1, marginBottom: 10 }}>
+          <motion.button onClick={() => !locked && onSelectLesson(lesson.id)} disabled={locked}
+            whileHover={locked ? {} : { scale: 1.03 }} whileTap={locked ? {} : { scale: 0.97 }}
+            style={{
+              width: "46%", padding: "12px 14px", borderRadius: 20, textAlign: "left",
+              border: stars > 0 ? `2.5px solid ${accentColor}` : `2px solid ${C.border}`,
+              background: locked ? "#f5f0e8" : C.card, cursor: locked ? "not-allowed" : "pointer",
+              opacity: locked ? 0.45 : 1, boxShadow: stars > 0 ? `0 3px 12px ${accentColor}25` : "0 1px 4px rgba(0,0,0,0.04)",
+            }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 22 }}>{locked ? "🔒" : stars >= 3 ? "🌟" : emojis[i] || "📖"}</span>
+              <Stars count={stars} size={14}/>
+            </div>
+            <p style={{ margin: "5px 0 0", fontSize: 14, fontWeight: 700, color: C.text, lineHeight: 1.3 }}>{lesson.title}</p>
+            <p style={{ margin: "2px 0 0", fontSize: 11, color: C.textLight, lineHeight: 1.3 }}>{lesson.description}</p>
+          </motion.button>
+        </motion.div>;
+      })}
+    </div>
+  </div>;
 }
 
-// ----- Lesson Detail Page -----
-function LessonPage({ lessonId, onBack }) {
+function LessonPage({ lessonId, onBack, username }) {
   const { data: lesson, loading } = useFetch(`/lessons/${lessonId}`);
-  const [activeTab, setActiveTab] = useState("tutorial"); // tutorial | practice
-  const [selectedMethod, setSelectedMethod] = useState(0);
+  const [tab, setTab] = useState("tutorial");
+  const [methodIdx, setMethodIdx] = useState(0);
+  const [variantIdx, setVariantIdx] = useState(-1); // -1 = default, 0+ = from variants
 
-  if (loading || !lesson) return <div style={{ textAlign: "center", padding: 60, color: colors.textLight }}>加载中...</div>;
+  if (loading || !lesson) return <div style={{ textAlign: "center", padding: 60 }}><Mascot mood="think" size={70} message="加载中..."/></div>;
 
-  const methods = lesson.animation_data?.methods || [];
+  const variants = lesson.animation_variants || [];
+  const allAnimData = [lesson.animation_data, ...variants];
+  const currentAnim = variantIdx < 0 ? lesson.animation_data : variants[variantIdx];
+  const methods = currentAnim?.methods || [];
   const exercises = lesson.exercises || [];
 
-  const handleExerciseComplete = async (score) => {
-    const stars = score.correct === exercises.length ? 3 : score.correct >= exercises.length * 0.7 ? 2 : score.correct >= 1 ? 1 : 0;
-    try {
-      await fetch(API + "/progress/student-001", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lesson_id: lessonId, stars, correct_count: score.correct, total_count: score.total, time_spent: 120 })
-      });
-    } catch (e) {}
-    setActiveTab("tutorial");
+  const pickRandomVariant = () => {
+    if (allAnimData.length <= 1) return;
+    let newIdx;
+    do { newIdx = Math.floor(Math.random() * allAnimData.length) - 1; } while (newIdx === variantIdx && allAnimData.length > 1);
+    setVariantIdx(newIdx);
+    setMethodIdx(0);
   };
 
-  return (
-    <div style={{ padding: "16px", maxWidth: 560, margin: "0 auto" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-        <button onClick={onBack}
-          style={{ width: 36, height: 36, borderRadius: 12, border: `2px solid ${colors.border}`,
-            background: colors.card, cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          ←
-        </button>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: colors.text }}>{lesson.title}</h2>
-          <p style={{ margin: 0, fontSize: 13, color: colors.textLight }}>{lesson.description}</p>
-        </div>
+  const handleExComplete = async (score) => {
+    const pct = score.total > 0 ? score.correct / score.total : 0;
+    const stars = pct >= 0.9 ? 3 : pct >= 0.65 ? 2 : pct >= 0.3 ? 1 : 0;
+    try { await fetch(API + "/progress/student-001", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lesson_id: lessonId, stars, correct_count: score.correct, total_count: score.total, time_spent: 150 }) }); } catch {}
+    setTab("tutorial");
+  };
+
+  return <div style={{ padding: "14px 16px", maxWidth: 560, margin: "0 auto", position: "relative", zIndex: 1 }}>
+    {/* Header */}
+    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+      <button onClick={onBack} style={{ width: 38, height: 38, borderRadius: 14, border: `2px solid ${C.border}`,
+        background: C.card, cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" }}>←</button>
+      <div style={{ flex: 1 }}>
+        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: C.text }}>{lesson.title}</h2>
+        <p style={{ margin: 0, fontSize: 12, color: C.textLight }}>{lesson.description}</p>
       </div>
-
-      {/* Tab switch */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, background: colors.border, borderRadius: 14, padding: 4 }}>
-        {[["tutorial", "📖 教程演示"], ["practice", "🎮 趣味练习"]].map(([key, label]) => (
-          <button key={key} onClick={() => setActiveTab(key)}
-            style={{ flex: 1, padding: "10px 0", borderRadius: 12, border: "none", fontSize: 15, fontWeight: 600,
-              background: activeTab === key ? colors.card : "transparent",
-              color: activeTab === key ? colors.text : colors.textLight,
-              boxShadow: activeTab === key ? "0 2px 8px rgba(0,0,0,0.08)" : "none", cursor: "pointer" }}>
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {/* Tutorial tab */}
-      {activeTab === "tutorial" && (
-        <div>
-          {/* Expression */}
-          <div style={{ textAlign: "center", padding: "16px 0", margin: "0 0 12px",
-            background: `linear-gradient(135deg, rgba(255,107,107,0.08), rgba(167,139,250,0.08))`, borderRadius: 16 }}>
-            <span style={{ fontSize: 32, fontWeight: 800, color: colors.text, letterSpacing: 3 }}>
-              {lesson.animation_data?.expression || ""}
-            </span>
-          </div>
-
-          {/* Method selector */}
-          {methods.length > 1 && (
-            <div style={{ display: "flex", gap: 8, marginBottom: 12, overflowX: "auto" }}>
-              {methods.map((m, i) => (
-                <button key={i} onClick={() => setSelectedMethod(i)}
-                  style={{ padding: "8px 16px", borderRadius: 20, border: "none", whiteSpace: "nowrap",
-                    background: selectedMethod === i ? colors.purple : colors.border,
-                    color: selectedMethod === i ? "#fff" : colors.text,
-                    fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
-                  {m.title}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Animation */}
-          {methods.length > 0 && (
-            <div style={{ background: colors.card, borderRadius: 20, padding: 16, boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}>
-              <AnimatePresence mode="wait">
-                <motion.div key={selectedMethod} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                  <AnimationPlayer methodData={methods[selectedMethod]}/>
-                </motion.div>
-              </AnimatePresence>
-            </div>
-          )}
-
-          {/* Start practice button */}
-          {exercises.length > 0 && (
-            <button onClick={() => setActiveTab("practice")}
-              style={{ width: "100%", padding: "14px 0", borderRadius: 20, border: "none", marginTop: 16,
-                background: `linear-gradient(135deg, ${colors.primary}, ${colors.purple})`,
-                color: "#fff", fontSize: 18, fontWeight: 700, cursor: "pointer" }}>
-              开始练习 🎮 ({exercises.length} 题)
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Practice tab */}
-      {activeTab === "practice" && (
-        <ExerciseGame exercises={exercises} onComplete={handleExerciseComplete}/>
-      )}
     </div>
-  );
+
+    {/* Tabs */}
+    <div style={{ display: "flex", gap: 6, marginBottom: 14, background: C.border, borderRadius: 16, padding: 4 }}>
+      {[["tutorial", "📖 教程"], ["practice", "🎮 练习"]].map(([k, l]) => (
+        <button key={k} onClick={() => setTab(k)}
+          style={{ flex: 1, padding: "10px 0", borderRadius: 14, border: "none", fontSize: 15, fontWeight: 700,
+            background: tab === k ? C.card : "transparent", color: tab === k ? C.text : C.textLight,
+            boxShadow: tab === k ? "0 2px 8px rgba(0,0,0,0.06)" : "none", cursor: "pointer" }}>
+          {l}
+        </button>
+      ))}
+    </div>
+
+    {tab === "tutorial" && <div>
+      {/* Expression header */}
+      <div style={{ textAlign: "center", padding: "14px 0", margin: "0 0 10px",
+        background: `linear-gradient(135deg, rgba(255,107,138,0.08), rgba(155,89,182,0.08))`, borderRadius: 18 }}>
+        <span style={{ fontSize: 30, fontWeight: 900, color: C.text, letterSpacing: 4 }}>{currentAnim?.expression || ""}</span>
+      </div>
+
+      {/* Switch variant button */}
+      {allAnimData.length > 1 && (
+        <div style={{ textAlign: "center", marginBottom: 10 }}>
+          <button onClick={pickRandomVariant}
+            style={{ ...btnStyle(C.purple), padding: "6px 16px", fontSize: 13, borderRadius: 16 }}>
+            🔄 换一道题 ({allAnimData.length} 种)
+          </button>
+        </div>
+      )}
+
+      {/* Method tabs */}
+      {methods.length > 1 && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 10, overflowX: "auto" }}>
+          {methods.map((m, i) => (
+            <button key={i} onClick={() => setMethodIdx(i)}
+              style={{ padding: "7px 14px", borderRadius: 18, border: "none", whiteSpace: "nowrap",
+                background: methodIdx === i ? C.purple : C.border, color: methodIdx === i ? "#fff" : C.text,
+                fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+              {m.title}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Animation */}
+      {methods.length > 0 && (
+        <div style={{ background: C.card, borderRadius: 22, padding: 14, boxShadow: "0 3px 16px rgba(0,0,0,0.05)", border: `2px solid ${C.border}` }}>
+          <AnimatePresence mode="wait">
+            <motion.div key={`${variantIdx}-${methodIdx}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+              <AnimationPlayer methodData={methods[methodIdx]}/>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      )}
+
+      {exercises.length > 0 && (
+        <button onClick={() => setTab("practice")}
+          style={{ width: "100%", padding: "14px 0", borderRadius: 22, border: "none", marginTop: 14,
+            background: `linear-gradient(135deg, ${C.pink}, ${C.purple})`,
+            color: "#fff", fontSize: 18, fontWeight: 800, cursor: "pointer", boxShadow: `0 4px 12px ${C.pink}40` }}>
+          开始练习 🎮 (随机 10 题)
+        </button>
+      )}
+    </div>}
+
+    {tab === "practice" && <ExerciseGame lessonId={lessonId} exerciseCount={10} onComplete={handleExComplete} username={username}/>}
+  </div>;
 }
 
 // ============================================================
 //  APP ROOT
 // ============================================================
-
 export default function App() {
   const [currentLesson, setCurrentLesson] = useState(null);
+  const [username, setUsername] = useState(() => localStorage.getItem("mathkids_username") || "当当");
+
+  const handleSetUsername = (name) => {
+    const trimmed = name.trim() || "当当";
+    setUsername(trimmed);
+    localStorage.setItem("mathkids_username", trimmed);
+  };
 
   return (
-    <div style={{
-      minHeight: "100vh", fontFamily: "'Nunito', 'PingFang SC', 'Microsoft YaHei', sans-serif",
-      background: `linear-gradient(180deg, ${colors.bg} 0%, #FFF0E6 50%, #F0F8FF 100%)`,
-    }}>
-      <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet"/>
-
+    <div style={{ minHeight: "100vh", fontFamily: "'Nunito', 'PingFang SC', 'Microsoft YaHei', sans-serif",
+      background: `linear-gradient(180deg, ${C.bg1} 0%, ${C.bg2} 50%, ${C.bg3} 100%)` }}>
+      <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet"/>
+      <FloatingDecos/>
       <AnimatePresence mode="wait">
         {currentLesson ? (
           <motion.div key="lesson" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-            <LessonPage lessonId={currentLesson} onBack={() => setCurrentLesson(null)}/>
+            <LessonPage lessonId={currentLesson} onBack={() => setCurrentLesson(null)} username={username}/>
           </motion.div>
         ) : (
           <motion.div key="map" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <CourseMap onSelectLesson={setCurrentLesson}/>
+            <CourseMap onSelectLesson={setCurrentLesson} username={username} onSetUsername={handleSetUsername}/>
           </motion.div>
         )}
       </AnimatePresence>

@@ -90,8 +90,24 @@ async def check_answer(exercise_id: str, user_answer: str):
     return result
 
 
+async def get_random_exercises(lesson_id: str, count: int = 10):
+    """Get random subset of exercises for a lesson."""
+    db = await get_db()
+    rows = await db.execute(
+        f'SELECT * FROM exercises WHERE lesson_id=? ORDER BY RANDOM() LIMIT ?',
+        (lesson_id, count))
+    exercises = []
+    for r in await rows.fetchall():
+        d = dict(r)
+        d["options"] = json.loads(d["options"])
+        d["solutions"] = json.loads(d["solutions"])
+        d["hints"] = json.loads(d["hints"])
+        exercises.append(d)
+    await db.close()
+    return exercises
+
+
 async def batch_create_exercises(exercises: list):
-    """Create multiple exercises at once (for AI-generated batches)."""
     results = []
     for ex_data in exercises:
         r = await create_exercise(ex_data)

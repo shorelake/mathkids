@@ -69,6 +69,7 @@ async def list_lessons(course_id: str):
         d = dict(r)
         d["teaching_methods"] = json.loads(d["teaching_methods"])
         d["animation_data"] = json.loads(d["animation_data"])
+        d["animation_variants"] = json.loads(d.get("animation_variants", "[]") or "[]")
         lessons.append(d)
     await db.close()
     return lessons
@@ -84,6 +85,7 @@ async def get_lesson(lesson_id: str):
     d = dict(lesson)
     d["teaching_methods"] = json.loads(d["teaching_methods"])
     d["animation_data"] = json.loads(d["animation_data"])
+    d["animation_variants"] = json.loads(d.get("animation_variants", "[]") or "[]")
 
     # Also fetch exercises
     ex_rows = await db.execute('SELECT * FROM exercises WHERE lesson_id=? ORDER BY "order"', (lesson_id,))
