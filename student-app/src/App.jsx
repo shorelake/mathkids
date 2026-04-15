@@ -7,8 +7,9 @@ const API = import.meta.env.VITE_API_BASE_URL || "/api";
 function useFetch(url) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  useEffect(() => { setLoading(true); fetch(API + url).then(r => r.json()).then(d => { setData(d); setLoading(false); }).catch(() => setLoading(false)); }, [url]);
-  return { data, loading };
+  const refetch = () => fetch(API + url).then(r => r.json()).then(setData);
+  useEffect(() => { setLoading(true); refetch().then(() => setLoading(false)).catch(() => setLoading(false)); }, [url]);
+  return { data, loading, refetch };
 }
 
 // ===== COLORS =====
@@ -716,8 +717,8 @@ function CourseMap({ onSelectLesson, username, onSetUsername }) {
     <p style={{ textAlign: "center", fontSize: 13, color: C.textLight, margin: "0 0 20px" }}>{courses?.[0]?.description}</p>
     <div style={{ position: "relative" }}>
       <div style={{ position: "absolute", left: "50%", top: 0, bottom: 0, width: 4, background: `linear-gradient(180deg,${C.yellow},${C.teal},${C.pink})`, transform: "translateX(-50%)", borderRadius: 2, zIndex: 0, opacity: 0.3 }}/>
-      {lessons.filter(l => l.status === "published").map((lesson, i) => {
-        const stars = getStars(lesson.id); const prevStars = i > 0 ? getStars(lessons[i - 1]?.id) : 1;
+      {(() => { const published = lessons.filter(l => l.status === "published"); return published.map((lesson, i) => {
+        const stars = getStars(lesson.id); const prevStars = i > 0 ? getStars(published[i - 1]?.id) : 1;
         const locked = i > 0 && prevStars === 0; const side = i % 2 === 0 ? "left" : "right";
         return <motion.div key={lesson.id} initial={{ opacity: 0, x: side === "left" ? -30 : 30 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
           style={{ display: "flex", justifyContent: side === "left" ? "flex-start" : "flex-end", position: "relative", zIndex: 1, marginBottom: 10 }}>
@@ -733,7 +734,7 @@ function CourseMap({ onSelectLesson, username, onSetUsername }) {
             <p style={{ margin: "5px 0 0", fontSize: 14, fontWeight: 700, color: C.text, lineHeight: 1.3 }}>{lesson.title}</p>
             <p style={{ margin: "2px 0 0", fontSize: 11, color: C.textLight, lineHeight: 1.3 }}>{lesson.description}</p>
           </motion.button>
-        </motion.div>; })}
+        </motion.div>; }); })()}
     </div>
   </div>;
 }

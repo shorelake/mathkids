@@ -124,27 +124,3 @@ async def get_analytics():
         "total_users": total_users_row["c"],
         "lesson_stats": stats,
     }
-    """Get aggregate analytics for admin dashboard."""
-    db = await get_db()
-
-    total_users = await db.execute("SELECT COUNT(DISTINCT user_id) as c FROM user_progress")
-    total_users_row = await total_users.fetchone()
-
-    lesson_stats = await db.execute("""
-        SELECT l.id, l.title, l."order",
-            COUNT(up.user_id) as attempts,
-            AVG(up.stars) as avg_stars,
-            AVG(CASE WHEN up.total_count > 0 THEN up.correct_count * 100.0 / up.total_count ELSE 0 END) as avg_accuracy,
-            AVG(up.time_spent) as avg_time
-        FROM lessons l
-        LEFT JOIN user_progress up ON l.id = up.lesson_id
-        GROUP BY l.id
-        ORDER BY l."order"
-    """)
-    stats = [dict(r) for r in await lesson_stats.fetchall()]
-
-    await db.close()
-    return {
-        "total_users": total_users_row["c"],
-        "lesson_stats": stats,
-    }
