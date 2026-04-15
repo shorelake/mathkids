@@ -82,6 +82,8 @@ function CourseManager() {
   const [showNewCourse, setShowNewCourse] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newDesc, setNewDesc] = useState("");
+  const [unlockTarget, setUnlockTarget] = useState("__all__");
+  const [unlockMsg, setUnlockMsg] = useState(null);
 
   const loadCourses = useCallback(async () => { setCourses(await apiFetch("/courses")); }, []);
   const loadLessons = useCallback(async (cid) => { setLessons(await apiFetch(`/courses/${cid}/lessons`)); }, []);
@@ -100,6 +102,19 @@ function CourseManager() {
     const newStatus = lesson.status === "published" ? "draft" : "published";
     await apiPut(`/lessons/${lesson.id}`, { status: newStatus });
     loadLessons(selectedCourse);
+  };
+
+  const doUnlock = async (target = unlockTarget) => {
+    setUnlockMsg(null);
+    const body = { course_id: selectedCourse };
+    if (target !== "__all__") body.unlock_to_lesson_id = target;
+    const res = await apiPost("/progress/unlock", body);
+    const label = target === "__all__"
+      ? "全部课时"
+      : lessons.find(l => l.id === target)?.title || target;
+    const lockMsg = res.locked > 0 ? `，已锁定后续 ${res.locked} 个课时` : "";
+    setUnlockMsg({ text: `✅ 已解锁 ${res.unlocked} 个课时（到「${label}」）${lockMsg}` });
+    setTimeout(() => setUnlockMsg(null), 4000);
   };
 
   const saveAnimationData = async () => {
@@ -199,6 +214,45 @@ function CourseManager() {
               ))}
             </tbody>
           </table>
+
+          {/* 解锁进度面板 */}
+          <div style={{ marginTop: 16, padding: 16, borderRadius: 12, background: "#f0fdf4", border: "1.5px solid #bbf7d0" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <span style={{ fontSize: 16 }}>🔓</span>
+              <span style={{ fontWeight: 700, fontSize: 14, color: theme.text }}>解锁学生进度</span>
+              <span style={{ fontSize: 12, color: theme.textMuted }}>(user: student-001)</span>
+            </div>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              {/* 一键解锁全部 */}
+              <button style={{ ...btn("#059669"), display: "flex", alignItems: "center", gap: 6 }}
+                onClick={() => doUnlock("__all__")}>
+                🚀 一键解锁全部
+              </button>
+
+              {/* 解锁到指定课时 */}
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <span style={{ fontSize: 13, color: theme.textMuted, whiteSpace: "nowrap" }}>或解锁到：</span>
+                <select value={unlockTarget} onChange={e => setUnlockTarget(e.target.value)}
+                  style={{ ...input, width: "auto", padding: "7px 10px", fontSize: 13 }}>
+                  <option value="__all__">（全部）</option>
+                  {lessons.filter(l => l.status === "published").map(l => (
+                    <option key={l.id} value={l.id}>{l.order}. {l.title}</option>
+                  ))}
+                </select>
+                <button style={{ ...btn("#0284c7"), whiteSpace: "nowrap" }}
+                  onClick={() => doUnlock()}>
+                  确认解锁
+                </button>
+              </div>
+            </div>
+
+            {unlockMsg && (
+              <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 8,
+                background: "#d1fae5", color: "#065f46", fontSize: 13, fontWeight: 600 }}>
+                {unlockMsg.text}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

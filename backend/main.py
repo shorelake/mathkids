@@ -95,6 +95,11 @@ class ProgressUpdate(BaseModel):
     total_count: int = 0
     time_spent: int = 0
 
+class UnlockRequest(BaseModel):
+    course_id: str
+    unlock_to_lesson_id: Optional[str] = None
+    user_id: str = "student-001"
+
 class AIConfigUpdate(BaseModel):
     provider: Optional[str] = None
     api_key: Optional[str] = None
@@ -199,6 +204,10 @@ async def api_random_exercises(lesson_id: str, count: int = 10):
 
 
 # ===== Progress Routes =====
+
+@app.post("/api/progress/unlock")
+async def api_unlock_lessons(data: UnlockRequest):
+    return await progress.unlock_lessons(data.user_id, data.course_id, data.unlock_to_lesson_id)
 
 @app.get("/api/progress/{user_id}")
 async def api_get_progress(user_id: str):
