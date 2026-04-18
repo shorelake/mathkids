@@ -8,14 +8,18 @@ from pydantic import BaseModel
 from typing import Optional
 from contextlib import asynccontextmanager
 
-from models import init_db, seed_data
+from models import init_db, is_empty
 from services import course, exercise, progress, ai
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
-    await seed_data()
+    # 首次启动且数据库为空 → 自动跑 seed_all
+    if await is_empty():
+        print("🌱 数据库为空，自动 seed 所有课程...")
+        from tools.seed_all import run_all
+        await run_all()
     yield
 
 app = FastAPI(title="MathKids API", version="1.0.0", lifespan=lifespan)

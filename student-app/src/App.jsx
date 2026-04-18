@@ -375,6 +375,7 @@ function NumberLineAnimation({ data, onComplete }) {
   const showJump = step >= steps.findIndex(s => s.action === "jump" || s.action === "jump_split");
   const showEnd = step >= steps.findIndex(s => s.action === "mark_end");
   const jumpN = jumpS?.count || Math.abs(ep - sp);
+  const stepSize = jumpS?.step_size ?? 1;
   const dir = (jumpS?.direction === "left") ? -1 : 1;
   const [aj, setAj] = useState(0);
   useEffect(() => { if (showJump) { setAj(0); let i=0; const iv = setInterval(() => { i++; setAj(i); if (i >= jumpN) clearInterval(iv); }, 400); return () => clearInterval(iv); } }, [step]);
@@ -382,15 +383,17 @@ function NumberLineAnimation({ data, onComplete }) {
   const nx = (n) => pad + ((n - rf) / (rt - rf)) * (W - 2 * pad);
   const goNext = () => { if (step < steps.length - 1) setStep(s => s + 1); else onComplete?.(); };
   const goPrev = () => { if (step > 0) setStep(s => s - 1); };
+  // pick tick interval based on scale so we don't create hundreds of DOM nodes
+  const tickInterval = (rt - rf) > 50 ? 10 : (rt - rf) > 20 ? 5 : 1;
 
   return <div style={{ padding: "12px 0" }}>
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", maxWidth: 580, display: "block", margin: "0 auto" }}>
       <line x1={pad - 5} y1={65} x2={W - pad + 5} y2={65} stroke={C.text} strokeWidth={2.5} strokeLinecap="round"/>
-      {Array.from({ length: rt - rf + 1 }, (_, i) => { const n = rf + i, x = nx(n), major = n % 5 === 0 || n === sp || n === ep;
+      {Array.from({ length: Math.floor((rt - rf) / tickInterval) + 1 }, (_, i) => { const n = rf + i * tickInterval, x = nx(n), major = n % (tickInterval * 2) === 0 || n === sp || n === ep;
         return <g key={n}><line x1={x} y1={58} x2={x} y2={72} stroke={C.text} strokeWidth={major ? 2 : 0.8} opacity={major ? 1 : 0.4}/>{major && <text x={x} y={86} textAnchor="middle" fontSize={11} fill={C.text} fontWeight={600}>{n}</text>}</g>; })}
       {showStart && <motion.g initial={{ scale: 0 }} animate={{ scale: 1 }}><circle cx={nx(sp)} cy={65} r={10} fill={C.pink} stroke="#fff" strokeWidth={2}/><text x={nx(sp)} y={48} textAnchor="middle" fontSize={15} fontWeight={800} fill={C.pink}>{sp}</text></motion.g>}
       {showJump && Array.from({ length: Math.min(aj, jumpN) }, (_, i) => {
-        const fn = sp + dir * i, tn = sp + dir * (i + 1); const fx = nx(fn), tx = nx(tn), mx = (fx + tx) / 2;
+        const fn = sp + dir * i * stepSize, tn = sp + dir * (i + 1) * stepSize; const fx = nx(fn), tx = nx(tn), mx = (fx + tx) / 2;
         return <motion.g key={i} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           <path d={`M${fx},58 Q${mx},22 ${tx},58`} fill="none" stroke={C.blue} strokeWidth={2.5} strokeLinecap="round"/>
           <circle cx={tx} cy={58} r={3} fill={C.blue}/>
@@ -549,6 +552,585 @@ function StepByStepAnimation({ data, onComplete }) {
   </div>;
 }
 
+// ============================================================
+//  PLACE VALUE (数位盒) —— 100 以内加减法教程
+// ============================================================
+function TenRod({ highlighted = false, size = 44 }) {
+  return <svg width={size/3} height={size} viewBox="0 0 14 44">
+    <rect x="1" y="1" width="12" height="42" rx="3" fill={highlighted ? C.orange : C.blue}
+      stroke={C.text} strokeWidth="1.2"/>
+    {[...Array(10)].map((_, i) => <line key={i} x1="1" y1={5 + i * 4} x2="13" y2={5 + i * 4}
+      stroke="rgba(255,255,255,0.4)" strokeWidth="0.8"/>)}
+  </svg>;
+}
+function OneCube({ highlighted = false, size = 14 }) {
+  return <svg width={size} height={size} viewBox="0 0 14 14">
+    <rect x="1" y="1" width="12" height="12" rx="2" fill={highlighted ? C.orange : C.teal}
+      stroke={C.text} strokeWidth="1"/>
+  </svg>;
+}
+
+function PlaceValueAnimation({ data, onComplete }) {
+  const [step, setStep] = useState(0);
+  const [auto, setAuto] = useState(false);
+  const steps = data.steps; const cur = steps[step] || {};
+
+  const goNext = () => { if (step < steps.length - 1) setStep(s => s + 1); else onComplete?.(); };
+  const goPrev = () => { if (step > 0) setStep(s => s - 1); };
+  useEffect(() => {
+    if (auto && step < steps.length - 1) { const t = setTimeout(goNext, 2600); return () => clearTimeout(t); }
+    if (auto && step >= steps.length - 1) setAuto(false);
+  }, [step, auto]);
+
+  // Collect all show_num / show_tens calls up to current step → visible piles
+  const piles = [];
+  let merged = null, exchange = null;
+  for (let i = 0; i <= step; i++) {
+    const s = steps[i];
+    if (s.action === "show_num" || s.action === "show_tens") piles.push(s);
+    if (s.action === "merge" || s.action === "combine_tens") merged = s;
+    if (s.action === "exchange") exchange = s;
+  }
+
+  const renderPile = (s, idx) => {
+    const tens = s.tens ?? s.count ?? 0;
+    const ones = s.ones ?? 0;
+    return <motion.div key={idx} layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+      style={{ display: "inline-flex", flexDirection: "column", alignItems: "center",
+        padding: 10, borderRadius: 16, border: `2px dashed ${C.border}`, background: C.card }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-end", minHeight: 50 }}>
+        <div style={{ display: "flex", gap: 3 }}>{Array.from({length: tens}).map((_, i) =>
+          <TenRod key={i} highlighted={!!exchange}/>)}</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 3, maxWidth: 80, alignItems: "flex-end" }}>
+          {Array.from({length: ones}).map((_, i) => <OneCube key={i}/>)}
+        </div>
+      </div>
+      <div style={{ marginTop: 6, fontSize: 18, fontWeight: 900, color: C.text }}>{s.label ?? s.number ?? (tens*10+ones)}</div>
+    </motion.div>;
+  };
+
+  return <div style={{ padding: "10px 0" }}>
+    <div style={{ display: "flex", justifyContent: "center", gap: 14, flexWrap: "wrap", minHeight: 140 }}>
+      {!merged && piles.map(renderPile)}
+      {merged && (() => {
+        // Two cases:
+        //   - "merge" action: result=total sum, tens/ones specify counts directly
+        //   - "combine_tens" action: result is the # of tens (no ones piece)
+        const isCombineTens = merged.action === "combine_tens";
+        const rodCount = isCombineTens ? (merged.result ?? 0) : (merged.tens ?? 0);
+        const cubeCount = isCombineTens ? 0 : (merged.ones ?? 0);
+        const finalSum = isCombineTens ? (merged.result ?? 0) * 10
+                                        : (merged.result ?? rodCount * 10 + cubeCount);
+        return <motion.div initial={{ scale: 0.7, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: "spring" }}
+          style={{ padding: 18, borderRadius: 22, border: `3px solid ${C.green}`,
+            background: "rgba(107,203,119,0.12)", textAlign: "center", minWidth: 120 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-end", justifyContent: "center" }}>
+            <div style={{ display: "flex", gap: 3 }}>{Array.from({length: rodCount}).map((_, i) =>
+              <TenRod key={i}/>)}</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 3, maxWidth: 80 }}>
+              {Array.from({length: cubeCount}).map((_, i) => <OneCube key={i}/>)}
+            </div>
+          </div>
+          <div style={{ fontSize: 32, fontWeight: 900, color: C.green, marginTop: 8 }}>
+            = {finalSum}
+          </div>
+        </motion.div>;
+      })()}
+    </div>
+    {exchange && !merged && <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
+      style={{ textAlign: "center", margin: "10px 0", fontSize: 16, fontWeight: 800, color: C.orange }}>
+      🎯 {exchange.from_ones} 个一 → 换 1 根十棒 + {exchange.remain_ones} 个一！
+    </motion.div>}
+    <Mascot mood={merged ? "wow" : "think"} size={56} message={cur.narration}/>
+    <AnimControls step={step} total={steps.length} onPrev={goPrev} onNext={goNext}
+      auto={auto} onAutoToggle={() => setAuto(!auto)}/>
+  </div>;
+}
+
+// ============================================================
+//  COLUMN ADD (竖式加法) —— 进位或不进位
+// ============================================================
+function ColumnArithmetic({ data, onComplete, op }) {
+  const [step, setStep] = useState(0);
+  const [auto, setAuto] = useState(false);
+  const steps = data.steps; const cur = steps[step] || {};
+  const setup = steps.find(s => s.action === "setup") || {};
+  const top = setup.top ?? 0, bottom = setup.bottom ?? 0;
+  const topT = Math.floor(top / 10), topO = top % 10;
+  const botT = Math.floor(bottom / 10), botO = bottom % 10;
+
+  // Highlight / completion flags
+  const sym = op === "+" ? "+" : "−";
+  const isOnesStep = step >= steps.findIndex(s => s.action === (op === "+" ? "add_ones" : "sub_ones"));
+  const isBorrow = steps.findIndex(s => s.action === "borrow");
+  const didBorrow = isBorrow >= 0 && step >= isBorrow;
+  const isTensStep = step >= steps.findIndex(s => s.action === (op === "+" ? "add_tens" : "sub_tens"));
+  const isResult = step >= steps.findIndex(s => s.action === "show_result");
+  const writeOnes = steps.find(s => s.action === "write_ones");
+  const onesRes = writeOnes?.digit ??
+    (op === "+" ? (topO + botO) % 10 : (didBorrow ? 10 + topO - botO : topO - botO));
+  const carryToTens = op === "+" && (topO + botO >= 10) ? 1 : 0;
+  const tensRes = op === "+" ? topT + botT + carryToTens
+                             : (didBorrow ? topT - 1 - botT : topT - botT);
+  const finalResult = op === "+" ? top + bottom : top - bottom;
+
+  const goNext = () => { if (step < steps.length - 1) setStep(s => s + 1); else onComplete?.(); };
+  const goPrev = () => { if (step > 0) setStep(s => s - 1); };
+  useEffect(() => {
+    if (auto && step < steps.length - 1) { const t = setTimeout(goNext, 2800); return () => clearTimeout(t); }
+    if (auto && step >= steps.length - 1) setAuto(false);
+  }, [step, auto]);
+
+  const Cell = ({ children, highlight, color = C.text, size = 28 }) =>
+    <div style={{ width: 36, height: 40, display: "flex", alignItems: "center", justifyContent: "center",
+      fontSize: size, fontWeight: 900, color,
+      background: highlight ? `${color}22` : "transparent", borderRadius: 8,
+      transition: "all 0.3s" }}>{children}</div>;
+
+  return <div style={{ padding: "10px 0" }}>
+    <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+      <div style={{ display: "inline-block", padding: "16px 20px 12px", background: "#FFF8EE",
+        borderRadius: 20, border: `2px solid ${C.border}`, fontFamily: "'Courier New',monospace",
+        position: "relative", minWidth: 170 }}>
+        {/* header labels */}
+        <div style={{ display: "flex", justifyContent: "flex-end", fontSize: 10, color: C.textLight, marginBottom: 4 }}>
+          <span style={{ width: 36, textAlign: "center" }}>十</span>
+          <span style={{ width: 36, textAlign: "center" }}>个</span>
+        </div>
+
+        {/* carry / borrow markers above top row */}
+        <div style={{ display: "flex", justifyContent: "flex-end", height: 14, alignItems: "center" }}>
+          {didBorrow && op === "-" && <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
+            style={{ width: 36, textAlign: "center", fontSize: 11, color: C.coral, fontWeight: 800 }}>
+            {topT - 1}.
+          </motion.div>}
+          {carryToTens && op === "+" && isOnesStep && <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
+            style={{ width: 36, textAlign: "center", fontSize: 11, color: C.orange, fontWeight: 800 }}>+1</motion.div>}
+          {!didBorrow && !(carryToTens && isOnesStep) && <div style={{ width: 72 }}/>}
+        </div>
+
+        {/* Top row */}
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <Cell>{topT || ""}</Cell>
+          <Cell>{topO}</Cell>
+        </div>
+        {/* Bottom row with operator */}
+        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center" }}>
+          <span style={{ fontSize: 26, fontWeight: 900, color: C.purple, marginRight: 4 }}>{sym}</span>
+          <Cell>{botT || ""}</Cell>
+          <Cell>{botO}</Cell>
+        </div>
+        {/* horizontal bar */}
+        <div style={{ borderBottom: `2.5px solid ${C.text}`, margin: "2px 0 4px" }}/>
+        {/* Result row */}
+        <div style={{ display: "flex", justifyContent: "flex-end", minHeight: 42 }}>
+          <Cell highlight={isTensStep && !isResult} color={C.green}>
+            {isTensStep ? tensRes : ""}
+          </Cell>
+          <Cell highlight={isOnesStep && !isTensStep} color={C.green}>
+            {isOnesStep ? onesRes : ""}
+          </Cell>
+        </div>
+      </div>
+    </div>
+
+    {isResult && <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring" }}
+      style={{ textAlign: "center", fontSize: 28, fontWeight: 900, color: C.pink, margin: "8px 0" }}>
+      = {finalResult} 🎉
+    </motion.div>}
+
+    <Mascot mood={isResult ? "wow" : (didBorrow || carryToTens) ? "think" : "happy"}
+      size={56} message={cur.narration}/>
+    <AnimControls step={step} total={steps.length} onPrev={goPrev} onNext={goNext}
+      auto={auto} onAutoToggle={() => setAuto(!auto)}/>
+  </div>;
+}
+
+function ColumnAddAnimation(p) { return <ColumnArithmetic {...p} op="+"/>; }
+function ColumnSubAnimation(p) { return <ColumnArithmetic {...p} op="-"/>; }
+
+// ============================================================
+//  MULTIPLY ARRAY (乘法方阵图)
+// ============================================================
+function MultiplyArrayAnimation({ data, onComplete }) {
+  const [step, setStep] = useState(0);
+  const [auto, setAuto] = useState(false);
+  const steps = data.steps; const cur = steps[step] || {};
+  const gs = steps.find(s => s.action === "show_groups") || {};
+  const groups = gs.groups || 0, perGroup = gs.per_group || 0;
+  const shapes = useShapePool(groups * perGroup);
+
+  const showI = steps.findIndex(s => s.action === "show_groups");
+  const countRowI = steps.findIndex(s => s.action === "count_row");
+  const countAllI = steps.findIndex(s => s.action === "count_all");
+  const resultI = steps.findIndex(s => s.action === "show_result");
+  const isShown = showI >= 0 && step >= showI;
+  const firstRowHi = countRowI >= 0 && step >= countRowI && step < (countAllI >= 0 ? countAllI : step+1);
+  const allHi = countAllI >= 0 && step >= countAllI;
+  const isResult = resultI >= 0 && step >= resultI;
+
+  const goNext = () => { if (step < steps.length - 1) setStep(s => s + 1); else onComplete?.(); };
+  const goPrev = () => { if (step > 0) setStep(s => s - 1); };
+  useEffect(() => {
+    if (auto && step < steps.length - 1) { const t = setTimeout(goNext, 2400); return () => clearTimeout(t); }
+    if (auto && step >= steps.length - 1) setAuto(false);
+  }, [step, auto]);
+
+  const sizeBase = Math.max(22, Math.min(40, Math.floor(280 / Math.max(perGroup, groups, 3))));
+
+  return <div style={{ padding: "10px 0" }}>
+    <div style={{ display: "flex", justifyContent: "center", minHeight: 140 }}>
+      {isShown && <div style={{ display: "flex", flexDirection: "column", gap: 4,
+        padding: 10, borderRadius: 16, background: allHi ? "rgba(255,215,61,0.12)" : "transparent",
+        border: `2px dashed ${allHi ? C.yellow : C.border}`, transition: "all 0.3s" }}>
+        {Array.from({length: groups}).map((_, r) =>
+          <motion.div key={r} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: r * 0.12 }}
+            style={{ display: "flex", gap: 4, padding: 2, borderRadius: 8,
+              background: (firstRowHi && r === 0) ? "rgba(255,140,66,0.15)" : "transparent" }}>
+            {Array.from({length: perGroup}).map((_, c) =>
+              <motion.div key={c} initial={{ scale: 0 }} animate={{ scale: 1 }}
+                transition={{ delay: r * 0.12 + c * 0.03, type: "spring" }}>
+                <CuteObject index={shapes[r * perGroup + c]} size={sizeBase}
+                  highlighted={allHi || (firstRowHi && r === 0)}/>
+              </motion.div>)}
+          </motion.div>)}
+      </div>}
+    </div>
+    {isResult && <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring" }}
+      style={{ textAlign: "center", fontSize: 32, fontWeight: 900, color: C.pink, margin: "8px 0" }}>
+      {groups} × {perGroup} = {groups * perGroup} 🎉
+    </motion.div>}
+    <Mascot mood={isResult ? "wow" : "happy"} size={56} message={cur.narration}/>
+    <AnimControls step={step} total={steps.length} onPrev={goPrev} onNext={goNext}
+      auto={auto} onAutoToggle={() => setAuto(!auto)}/>
+  </div>;
+}
+
+// ============================================================
+//  REPEATED ADD (相同加法 → 乘法)
+// ============================================================
+function RepeatedAddAnimation({ data, onComplete }) {
+  const [step, setStep] = useState(0);
+  const steps = data.steps; const cur = steps[step] || {};
+  const gs = steps.find(s => s.action === "show_groups") || {};
+  const groups = gs.groups || 0, perGroup = gs.per_group || 0;
+  const total = groups * perGroup;
+  const shapes = useShapePool(total);
+
+  const exprI = steps.findIndex(s => s.action === "show_expression");
+  const concludeI = steps.findIndex(s => s.action === "conclude");
+  const isExpr = exprI >= 0 && step >= exprI;
+  const isConc = concludeI >= 0 && step >= concludeI;
+
+  const goNext = () => { if (step < steps.length - 1) setStep(s => s + 1); else onComplete?.(); };
+  const goPrev = () => { if (step > 0) setStep(s => s - 1); };
+
+  return <div style={{ padding: "10px 0" }}>
+    <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 12, minHeight: 100 }}>
+      {Array.from({length: groups}).map((_, g) => <motion.div key={g}
+        initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: g * 0.1, type: "spring" }}
+        style={{ padding: 6, borderRadius: 12, border: `2px dashed ${C.coral}`, background: "rgba(255,111,97,0.06)",
+          display: "flex", gap: 3 }}>
+        {Array.from({length: perGroup}).map((_, i) =>
+          <CuteObject key={i} index={shapes[g * perGroup + i]} size={26}/>)}
+      </motion.div>)}
+    </div>
+    {isExpr && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+      style={{ textAlign: "center", fontSize: 22, fontWeight: 800, color: C.purple, margin: "10px 0" }}>
+      {Array(groups).fill(perGroup).join(" + ")} = <b style={{ color: C.pink }}>{total}</b>
+    </motion.div>}
+    {isConc && <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
+      style={{ textAlign: "center", fontSize: 26, fontWeight: 900, color: C.pink, margin: "8px 0" }}>
+      也就是 {groups} × {perGroup} = {total} 🎉
+    </motion.div>}
+    <Mascot mood={isConc ? "wow" : "think"} size={56} message={cur.narration}/>
+    <AnimControls step={step} total={steps.length} onPrev={goPrev} onNext={goNext}/>
+  </div>;
+}
+
+// ============================================================
+//  SHARE EQUALLY (除法: 平均分)
+// ============================================================
+function ShareEquallyAnimation({ data, onComplete }) {
+  const [step, setStep] = useState(0);
+  const [dealt, setDealt] = useState(0);
+  const steps = data.steps; const cur = steps[step] || {};
+  const totalS = steps.find(s => s.action === "show_items") || {};
+  const total = totalS.total || 0;
+  const groupsS = steps.find(s => s.action === "make_groups") || {};
+  const groups = groupsS.groups || 1;
+  const perGroup = Math.floor(total / groups);
+  const shapes = useShapePool(total);
+
+  const showGroupsI = steps.findIndex(s => s.action === "make_groups");
+  const dealI = steps.findIndex(s => s.action === "deal_one_by_one");
+  const resultI = steps.findIndex(s => s.action === "show_result");
+  const showGroups = showGroupsI >= 0 && step >= showGroupsI;
+  const dealing = dealI >= 0 && step >= dealI && step < (resultI >= 0 ? resultI : step+1);
+  const done = resultI >= 0 && step >= resultI;
+
+  useEffect(() => {
+    if (dealing) {
+      setDealt(0);
+      let c = 0;
+      const iv = setInterval(() => {
+        c++; setDealt(c);
+        if (c >= perGroup * groups) clearInterval(iv);
+      }, 180);
+      return () => clearInterval(iv);
+    }
+    if (done) setDealt(perGroup * groups);
+  }, [step]);
+
+  const goNext = () => { if (step < steps.length - 1) setStep(s => s + 1); else onComplete?.(); };
+  const goPrev = () => { if (step > 0) setStep(s => s - 1); };
+
+  return <div style={{ padding: "10px 0" }}>
+    {!showGroups && <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 4,
+      minHeight: 80 }}>
+      {Array.from({length: total}).map((_, i) =>
+        <motion.div key={i} initial={{ scale: 0 }} animate={{ scale: 1 }}
+          transition={{ delay: i * 0.02 }}>
+          <CuteObject index={shapes[i]} size={28}/>
+        </motion.div>)}
+    </div>}
+    {showGroups && <div style={{ display: "flex", justifyContent: "center", gap: 16, flexWrap: "wrap", minHeight: 120 }}>
+      {Array.from({length: groups}).map((_, g) => {
+        const mine = Array.from({length: perGroup})
+          .map((_, i) => g + i * groups)  // round-robin dealing order
+          .filter(idx => idx < dealt);
+        return <motion.div key={g} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: g * 0.1 }}
+          style={{ padding: 10, borderRadius: 16, border: `2.5px solid ${done ? C.green : C.blue}`,
+            background: done ? "rgba(107,203,119,0.08)" : C.card, minWidth: 80, minHeight: 80,
+            display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: done ? C.green : C.blue }}>小筐 {g + 1}</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 3, justifyContent: "center", maxWidth: 80 }}>
+            {mine.map((idx, i) => <motion.div key={i} initial={{ scale: 0 }} animate={{ scale: 1 }}
+              transition={{ type: "spring" }}>
+              <CuteObject index={shapes[idx]} size={22}/>
+            </motion.div>)}
+          </div>
+          {done && <div style={{ fontSize: 16, fontWeight: 800, color: C.green }}>{perGroup} 个</div>}
+        </motion.div>;
+      })}
+    </div>}
+    {done && <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring" }}
+      style={{ textAlign: "center", fontSize: 28, fontWeight: 900, color: C.pink, margin: "8px 0" }}>
+      {total} ÷ {groups} = {perGroup} 🎉
+    </motion.div>}
+    <Mascot mood={done ? "wow" : "think"} size={56} message={cur.narration}/>
+    <AnimControls step={step} total={steps.length} onPrev={goPrev} onNext={goNext}/>
+  </div>;
+}
+
+// ============================================================
+//  SHAPE SHOW (图形认知)
+// ============================================================
+function ShapeSVG({ shape, size = 120, highlighted = false }) {
+  const col = highlighted ? C.pink : C.purple;
+  const st = highlighted ? 4 : 3;
+  const s = size;
+  const shapes = {
+    circle: <circle cx={s/2} cy={s/2} r={s*0.42} fill={`${col}22`} stroke={col} strokeWidth={st}/>,
+    square: <rect x={s*0.14} y={s*0.14} width={s*0.72} height={s*0.72}
+              fill={`${col}22`} stroke={col} strokeWidth={st} rx="6"/>,
+    triangle: <polygon points={`${s/2},${s*0.1} ${s*0.92},${s*0.88} ${s*0.08},${s*0.88}`}
+              fill={`${col}22`} stroke={col} strokeWidth={st} strokeLinejoin="round"/>,
+    rectangle: <rect x={s*0.08} y={s*0.28} width={s*0.84} height={s*0.44}
+              fill={`${col}22`} stroke={col} strokeWidth={st} rx="6"/>,
+    pentagon: (() => {
+      const cx = s/2, cy = s/2, r = s*0.42;
+      const pts = [0,1,2,3,4].map(i => {
+        const a = -Math.PI/2 + i * 2*Math.PI/5;
+        return `${cx + r*Math.cos(a)},${cy + r*Math.sin(a)}`;
+      }).join(" ");
+      return <polygon points={pts} fill={`${col}22`} stroke={col} strokeWidth={st} strokeLinejoin="round"/>;
+    })(),
+    hexagon: (() => {
+      const cx = s/2, cy = s/2, r = s*0.42;
+      const pts = [0,1,2,3,4,5].map(i => {
+        const a = -Math.PI/2 + i * Math.PI/3;
+        return `${cx + r*Math.cos(a)},${cy + r*Math.sin(a)}`;
+      }).join(" ");
+      return <polygon points={pts} fill={`${col}22`} stroke={col} strokeWidth={st} strokeLinejoin="round"/>;
+    })(),
+  };
+  return <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+    {shapes[shape] || shapes.circle}
+  </svg>;
+}
+
+function ShapeShowAnimation({ data, onComplete }) {
+  const [step, setStep] = useState(0);
+  const steps = data.steps; const cur = steps[step] || {};
+  const shape = data.shape || "circle";
+
+  const sideI = steps.findIndex(s => s.action === "count_sides");
+  const cornerI = steps.findIndex(s => s.action === "count_corners");
+  const exI = steps.findIndex(s => s.action === "show_examples");
+  const sides = steps[sideI]?.sides ?? 0;
+  const corners = steps[cornerI]?.corners ?? 0;
+  const examples = steps[exI]?.examples ?? [];
+
+  const goNext = () => { if (step < steps.length - 1) setStep(s => s + 1); else onComplete?.(); };
+  const goPrev = () => { if (step > 0) setStep(s => s - 1); };
+
+  return <div style={{ padding: "10px 0", textAlign: "center" }}>
+    <motion.div initial={{ scale: 0.5, rotate: -30 }} animate={{ scale: 1, rotate: 0 }}
+      transition={{ type: "spring", stiffness: 200 }}
+      style={{ display: "inline-block" }}>
+      <ShapeSVG shape={shape} size={140} highlighted={step >= sideI}/>
+    </motion.div>
+    <div style={{ display: "flex", justifyContent: "center", gap: 14, margin: "12px 0" }}>
+      {sideI >= 0 && step >= sideI && <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
+        style={{ padding: "8px 16px", borderRadius: 14, background: `${C.teal}22`, border: `2px solid ${C.teal}` }}>
+        <div style={{ fontSize: 12, color: C.teal, fontWeight: 700 }}>边</div>
+        <div style={{ fontSize: 24, fontWeight: 900, color: C.teal }}>{sides}</div>
+      </motion.div>}
+      {cornerI >= 0 && step >= cornerI && <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
+        style={{ padding: "8px 16px", borderRadius: 14, background: `${C.orange}22`, border: `2px solid ${C.orange}` }}>
+        <div style={{ fontSize: 12, color: C.orange, fontWeight: 700 }}>角</div>
+        <div style={{ fontSize: 24, fontWeight: 900, color: C.orange }}>{corners}</div>
+      </motion.div>}
+    </div>
+    {exI >= 0 && step >= exI && examples.length > 0 &&
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+        style={{ margin: "8px 0", fontSize: 14, color: C.textLight }}>
+        生活中：{examples.map((e, i) => <span key={i} style={{ padding: "3px 10px", margin: 3,
+          background: `${C.yellow}22`, borderRadius: 12, display: "inline-block" }}>{e}</span>)}
+      </motion.div>}
+    <Mascot mood="happy" size={56} message={cur.narration}/>
+    <AnimControls step={step} total={steps.length} onPrev={goPrev} onNext={goNext}/>
+  </div>;
+}
+
+// ============================================================
+//  FRACTION PIE (分数饼)
+// ============================================================
+function FractionPieAnimation({ data, onComplete }) {
+  const [step, setStep] = useState(0);
+  const steps = data.steps; const cur = steps[step] || {};
+  const divideS = steps.find(s => s.action === "divide") || {};
+  const hiS = steps.find(s => s.action === "highlight") || {};
+  const parts = divideS.parts || 1;
+  const num = hiS.num ?? 0, den = hiS.den ?? parts;
+
+  const divI = steps.findIndex(s => s.action === "divide");
+  const hiI = steps.findIndex(s => s.action === "highlight");
+  const fracI = steps.findIndex(s => s.action === "show_fraction");
+  const isDiv = divI >= 0 && step >= divI;
+  const isHi = hiI >= 0 && step >= hiI;
+
+  const goNext = () => { if (step < steps.length - 1) setStep(s => s + 1); else onComplete?.(); };
+  const goPrev = () => { if (step > 0) setStep(s => s - 1); };
+
+  const R = 70, CX = 80, CY = 80;
+  const slice = (i, highlighted) => {
+    const a0 = -Math.PI/2 + i * 2*Math.PI/parts;
+    const a1 = -Math.PI/2 + (i+1) * 2*Math.PI/parts;
+    const large = (a1 - a0) > Math.PI ? 1 : 0;
+    const x0 = CX + R * Math.cos(a0), y0 = CY + R * Math.sin(a0);
+    const x1 = CX + R * Math.cos(a1), y1 = CY + R * Math.sin(a1);
+    return <path key={i} d={`M${CX},${CY} L${x0},${y0} A${R},${R} 0 ${large} 1 ${x1},${y1} Z`}
+      fill={highlighted ? C.pink : `${C.pink}20`}
+      stroke={C.text} strokeWidth="1.5"/>;
+  };
+
+  return <div style={{ padding: "10px 0", textAlign: "center" }}>
+    <motion.svg width="160" height="160" viewBox="0 0 160 160"
+      initial={{ scale: 0.6, rotate: 0 }} animate={{ scale: 1, rotate: 0 }}
+      transition={{ type: "spring" }}
+      style={{ display: "inline-block" }}>
+      {!isDiv && <circle cx={CX} cy={CY} r={R} fill={`${C.pink}20`} stroke={C.text} strokeWidth="2"/>}
+      {isDiv && Array.from({length: parts}).map((_, i) => slice(i, isHi && i < num))}
+    </motion.svg>
+    {step >= fracI && fracI >= 0 && <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
+      transition={{ type: "spring" }}
+      style={{ margin: "10px 0", fontSize: 48, fontWeight: 900, color: C.pink,
+        fontFamily: "'Georgia',serif", lineHeight: 1 }}>
+      <span style={{ borderBottom: `3px solid ${C.text}`, paddingBottom: 2 }}>{num}</span>
+      <div style={{ fontSize: 44, marginTop: 2 }}>{den}</div>
+    </motion.div>}
+    <Mascot mood="happy" size={56} message={cur.narration}/>
+    <AnimControls step={step} total={steps.length} onPrev={goPrev} onNext={goNext}/>
+  </div>;
+}
+
+// ============================================================
+//  CLOCK (时钟)
+// ============================================================
+function ClockAnimation({ data, onComplete }) {
+  const [step, setStep] = useState(0);
+  const steps = data.steps; const cur = steps[step] || {};
+  const h = data.h ?? 3, m = data.m ?? 0;
+
+  const hourI = steps.findIndex(s => s.action === "point_hour_hand");
+  const minI = steps.findIndex(s => s.action === "point_minute_hand");
+  const readI = steps.findIndex(s => s.action === "read_time");
+  const showHour = hourI >= 0 && step >= hourI;
+  const showMin = minI >= 0 && step >= minI;
+  const showRead = readI >= 0 && step >= readI;
+
+  const goNext = () => { if (step < steps.length - 1) setStep(s => s + 1); else onComplete?.(); };
+  const goPrev = () => { if (step > 0) setStep(s => s - 1); };
+
+  // Clock geometry
+  const CX = 90, CY = 90, R = 72;
+  const hourAngle = -Math.PI/2 + ((h % 12) + m / 60) * Math.PI/6;   // 12h
+  const minAngle = -Math.PI/2 + m * Math.PI/30;                      // 60 min
+
+  const timeLabel = m === 0 ? `${h}:00`
+                    : m === 30 ? `${h}:30`
+                    : `${h}:${String(m).padStart(2, "0")}`;
+
+  return <div style={{ padding: "10px 0", textAlign: "center" }}>
+    <svg width="180" height="180" viewBox="0 0 180 180" style={{ display: "inline-block" }}>
+      <circle cx={CX} cy={CY} r={R+4} fill={C.yellow} stroke={C.orange} strokeWidth="2"/>
+      <circle cx={CX} cy={CY} r={R} fill="#FFFBEE" stroke={C.text} strokeWidth="2"/>
+      {/* minute dots */}
+      {[...Array(60)].map((_, i) => {
+        const a = -Math.PI/2 + i * Math.PI/30;
+        const r0 = R - 6, r1 = R - (i % 5 === 0 ? 14 : 10);
+        return <line key={i} x1={CX + r1*Math.cos(a)} y1={CY + r1*Math.sin(a)}
+          x2={CX + r0*Math.cos(a)} y2={CY + r0*Math.sin(a)}
+          stroke={i % 5 === 0 ? C.text : C.textLight} strokeWidth={i % 5 === 0 ? 2 : 1}/>;
+      })}
+      {/* hour numerals */}
+      {[...Array(12)].map((_, i) => {
+        const num = i === 0 ? 12 : i;
+        const a = -Math.PI/2 + i * Math.PI/6;
+        const r = R - 22;
+        return <text key={i} x={CX + r*Math.cos(a)} y={CY + r*Math.sin(a)}
+          textAnchor="middle" dominantBaseline="middle"
+          fontSize="16" fontWeight="800" fill={C.text}>{num}</text>;
+      })}
+      {/* hour hand */}
+      {showHour && <motion.line initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+        x1={CX} y1={CY}
+        x2={CX + R*0.5 * Math.cos(hourAngle)}
+        y2={CY + R*0.5 * Math.sin(hourAngle)}
+        stroke={C.coral} strokeWidth="6" strokeLinecap="round"/>}
+      {/* minute hand */}
+      {showMin && <motion.line initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+        x1={CX} y1={CY}
+        x2={CX + R*0.78 * Math.cos(minAngle)}
+        y2={CY + R*0.78 * Math.sin(minAngle)}
+        stroke={C.blue} strokeWidth="4" strokeLinecap="round"/>}
+      <circle cx={CX} cy={CY} r="4" fill={C.text}/>
+    </svg>
+    {showRead && <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring" }}
+      style={{ margin: "10px 0", fontSize: 36, fontWeight: 900, color: C.purple,
+        fontFamily: "'Courier New',monospace" }}>
+      🕐 {timeLabel}
+    </motion.div>}
+    <Mascot mood={showRead ? "wow" : "think"} size={56} message={cur.narration}/>
+    <AnimControls step={step} total={steps.length} onPrev={goPrev} onNext={goNext}/>
+  </div>;
+}
+
 // ===== ANIMATION ROUTER =====
 function AnimationPlayer({ methodData, onComplete }) {
   const t = methodData.type;
@@ -559,6 +1141,16 @@ function AnimationPlayer({ methodData, onComplete }) {
   if (t === "number_line") return <NumberLineAnimation {...p}/>;
   if (t === "counting") return <CountingAnimation {...p}/>;
   if (t === "step_by_step") return <StepByStepAnimation {...p}/>;
+  if (t === "place_value") return <PlaceValueAnimation {...p}/>;
+  if (t === "column_add") return <ColumnAddAnimation {...p}/>;
+  if (t === "column_sub") return <ColumnSubAnimation {...p}/>;
+  if (t === "multiply_array") return <MultiplyArrayAnimation {...p}/>;
+  if (t === "repeated_add") return <RepeatedAddAnimation {...p}/>;
+  if (t === "share_equally") return <ShareEquallyAnimation {...p}/>;
+  if (t === "repeated_sub") return <ShareEquallyAnimation {...p}/>;  // 视觉相近，复用
+  if (t === "shape_show") return <ShapeShowAnimation {...p}/>;
+  if (t === "fraction_pie") return <FractionPieAnimation {...p}/>;
+  if (t === "clock") return <ClockAnimation {...p}/>;
   return <CountingAnimation {...p}/>;
 }
 
@@ -682,17 +1274,34 @@ function CourseMap({ onSelectLesson, username, onSetUsername }) {
   const [progress, setProgress] = useState([]);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(username);
-  useEffect(() => { if (courses?.length) { fetch(API + `/courses/${courses[0].id}/lessons`).then(r => r.json()).then(setLessons); fetch(API + `/progress/student-001`).then(r => r.json()).then(setProgress); } }, [courses]);
+  const [selectedCourseId, setSelectedCourseId] = useState(null);
+
+  useEffect(() => {
+    if (courses?.length && !selectedCourseId) setSelectedCourseId(courses[0].id);
+  }, [courses]);
+
+  useEffect(() => {
+    if (selectedCourseId) {
+      fetch(API + `/courses/${selectedCourseId}/lessons`).then(r => r.json()).then(setLessons);
+      fetch(API + `/progress/student-001`).then(r => r.json()).then(setProgress);
+    }
+  }, [selectedCourseId]);
+
   const getStars = (lid) => (progress.find(p => p.lesson_id === lid))?.stars || 0;
   if (loading) return <div style={{ textAlign: "center", padding: 60 }}><Mascot mood="think" size={80} message="正在准备课程..."/></div>;
 
   const commitName = () => { onSetUsername(nameInput); setEditingName(false); };
   const emojis = ["🐣","🌈","🎵","🌸","🍎","🧩","🎲","🔢"];
   const colors = [C.pink, C.blue, C.green, C.orange, C.purple, C.teal, C.coral, C.yellow];
+  const courseIcons = { "course-add-sub-20": "➕", "course-add-sub-100": "💯",
+    "course-multiplication": "✖️", "course-division": "➗", "course-geometry": "🔷",
+    "course-fractions": "🍰", "course-time": "🕐" };
+  const selectedCourse = courses?.find(c => c.id === selectedCourseId);
 
-  return <div style={{ padding: "20px 16px", maxWidth: 460, margin: "0 auto", position: "relative", zIndex: 1 }}>
-    {/* 姓名标签 */}
-    <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+  return <div style={{ padding: "14px 16px", maxWidth: 720, margin: "0 auto", position: "relative", zIndex: 1 }}>
+    {/* 顶部：吉祥物 + 姓名 */}
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+      <Mascot mood="happy" size={52} message={`欢迎，${username}！`}/>
       {editingName ? (
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <input autoFocus value={nameInput} onChange={e => setNameInput(e.target.value)}
@@ -712,29 +1321,55 @@ function CourseMap({ onSelectLesson, username, onSetUsername }) {
         </motion.button>
       )}
     </div>
-    <div style={{ textAlign: "center", marginBottom: 20 }}><Mascot mood="happy" size={72} message={`欢迎来到数学小天地，${username}！选一个开始吧～`}/></div>
-    <h2 style={{ textAlign: "center", fontSize: 22, fontWeight: 800, color: C.text, margin: "0 0 4px" }}>🧮 {courses?.[0]?.title || "数学启蒙"}</h2>
-    <p style={{ textAlign: "center", fontSize: 13, color: C.textLight, margin: "0 0 20px" }}>{courses?.[0]?.description}</p>
-    <div style={{ position: "relative" }}>
-      <div style={{ position: "absolute", left: "50%", top: 0, bottom: 0, width: 4, background: `linear-gradient(180deg,${C.yellow},${C.teal},${C.pink})`, transform: "translateX(-50%)", borderRadius: 2, zIndex: 0, opacity: 0.3 }}/>
-      {(() => { const published = lessons.filter(l => l.status === "published"); return published.map((lesson, i) => {
-        const stars = getStars(lesson.id); const prevStars = i > 0 ? getStars(published[i - 1]?.id) : 1;
-        const locked = i > 0 && prevStars === 0; const side = i % 2 === 0 ? "left" : "right";
-        return <motion.div key={lesson.id} initial={{ opacity: 0, x: side === "left" ? -30 : 30 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
-          style={{ display: "flex", justifyContent: side === "left" ? "flex-start" : "flex-end", position: "relative", zIndex: 1, marginBottom: 10 }}>
-          <motion.button onClick={() => !locked && onSelectLesson(lesson.id)} disabled={locked}
-            whileHover={locked ? {} : { scale: 1.03 }} whileTap={locked ? {} : { scale: 0.97 }}
-            style={{ width: "46%", padding: "12px 14px", borderRadius: 20, textAlign: "left",
-              border: stars > 0 ? `2.5px solid ${colors[i % colors.length]}` : `2px solid ${C.border}`,
-              background: locked ? "#f5f0e8" : C.card, cursor: locked ? "not-allowed" : "pointer", opacity: locked ? 0.45 : 1,
-              boxShadow: stars > 0 ? `0 3px 12px ${colors[i % colors.length]}25` : "0 1px 4px rgba(0,0,0,0.04)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 22 }}>{locked ? "🔒" : stars >= 3 ? "🌟" : emojis[i] || "📖"}</span><Stars count={stars} size={14}/>
-            </div>
-            <p style={{ margin: "5px 0 0", fontSize: 14, fontWeight: 700, color: C.text, lineHeight: 1.3 }}>{lesson.title}</p>
-            <p style={{ margin: "2px 0 0", fontSize: 11, color: C.textLight, lineHeight: 1.3 }}>{lesson.description}</p>
-          </motion.button>
-        </motion.div>; }); })()}
+
+    {/* 主体：左侧课程列表 + 右侧 lesson 树 */}
+    <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+      {/* 左侧课程选择 */}
+      <div style={{ width: 148, flexShrink: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+        {courses?.map(c => {
+          const isSel = c.id === selectedCourseId;
+          return <motion.button key={c.id} whileTap={{ scale: 0.95 }}
+            onClick={() => setSelectedCourseId(c.id)}
+            style={{ width: "100%", padding: "10px 12px", borderRadius: 16, border: isSel ? "none" : `2px solid ${C.border}`,
+              background: isSel ? `linear-gradient(135deg,${C.pink},${C.purple})` : C.card,
+              color: isSel ? "#fff" : C.text, cursor: "pointer", textAlign: "left",
+              boxShadow: isSel ? `0 4px 12px ${C.pink}40` : "0 1px 4px rgba(0,0,0,0.05)" }}>
+            <div style={{ fontSize: 22, marginBottom: 4 }}>{courseIcons[c.id] || "📚"}</div>
+            <div style={{ fontSize: 12, fontWeight: 700, lineHeight: 1.35 }}>{c.title}</div>
+          </motion.button>;
+        })}
+      </div>
+
+      {/* 右侧：标题 + lesson 树 */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <h2 style={{ margin: "0 0 2px", fontSize: 18, fontWeight: 800, color: C.text }}>
+          {courseIcons[selectedCourseId] || "🧮"} {selectedCourse?.title || "数学启蒙"}
+        </h2>
+        <p style={{ margin: "0 0 14px", fontSize: 12, color: C.textLight }}>{selectedCourse?.description}</p>
+        <div style={{ position: "relative" }}>
+          <div style={{ position: "absolute", left: "50%", top: 0, bottom: 0, width: 4,
+            background: `linear-gradient(180deg,${C.yellow},${C.teal},${C.pink})`,
+            transform: "translateX(-50%)", borderRadius: 2, zIndex: 0, opacity: 0.3 }}/>
+          {(() => { const published = lessons.filter(l => l.status === "published"); return published.map((lesson, i) => {
+            const stars = getStars(lesson.id); const prevStars = i > 0 ? getStars(published[i - 1]?.id) : 1;
+            const locked = i > 0 && prevStars === 0; const side = i % 2 === 0 ? "left" : "right";
+            return <motion.div key={lesson.id} initial={{ opacity: 0, x: side === "left" ? -20 : 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.06 }}
+              style={{ display: "flex", justifyContent: side === "left" ? "flex-start" : "flex-end", position: "relative", zIndex: 1, marginBottom: 10 }}>
+              <motion.button onClick={() => !locked && onSelectLesson(lesson.id)} disabled={locked}
+                whileHover={locked ? {} : { scale: 1.03 }} whileTap={locked ? {} : { scale: 0.97 }}
+                style={{ width: "46%", padding: "11px 13px", borderRadius: 18, textAlign: "left",
+                  border: stars > 0 ? `2.5px solid ${colors[i % colors.length]}` : `2px solid ${C.border}`,
+                  background: locked ? "#f5f0e8" : C.card, cursor: locked ? "not-allowed" : "pointer", opacity: locked ? 0.45 : 1,
+                  boxShadow: stars > 0 ? `0 3px 12px ${colors[i % colors.length]}25` : "0 1px 4px rgba(0,0,0,0.04)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: 20 }}>{locked ? "🔒" : stars >= 3 ? "🌟" : emojis[i] || "📖"}</span><Stars count={stars} size={13}/>
+                </div>
+                <p style={{ margin: "4px 0 0", fontSize: 13, fontWeight: 700, color: C.text, lineHeight: 1.3 }}>{lesson.title}</p>
+                <p style={{ margin: "2px 0 0", fontSize: 11, color: C.textLight, lineHeight: 1.3 }}>{lesson.description}</p>
+              </motion.button>
+            </motion.div>; }); })()}
+        </div>
+      </div>
     </div>
   </div>;
 }
@@ -757,7 +1392,7 @@ function LessonPage({ lessonId, onBack, username }) {
     const stars = pct >= 0.9 ? 3 : pct >= 0.65 ? 2 : pct >= 0.3 ? 1 : 0;
     try { await fetch(API + "/progress/student-001", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ lesson_id: lessonId, stars, correct_count: score.correct, total_count: score.total, time_spent: 150 }) }); } catch {}
-    setTab("tutorial");
+    onBack();
   };
 
   return <div style={{ padding: "14px 16px", maxWidth: 560, margin: "0 auto", position: "relative", zIndex: 1 }}>
@@ -786,8 +1421,8 @@ function LessonPage({ lessonId, onBack, username }) {
           background: methodIdx === i ? C.purple : C.border, color: methodIdx === i ? "#fff" : C.text, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{m.title}</button>)}
       </div>}
       {methods.length > 0 && <div style={{ background: C.card, borderRadius: 22, padding: 14, boxShadow: "0 3px 16px rgba(0,0,0,0.05)", border: `2px solid ${C.border}` }}>
-        <AnimatePresence mode="wait"><motion.div key={`${variantIdx}-${methodIdx}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <AnimationPlayer methodData={methods[methodIdx]}/></motion.div></AnimatePresence>
+        <motion.div key={`${variantIdx}-${methodIdx}`} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }}>
+          <AnimationPlayer methodData={methods[methodIdx]}/></motion.div>
       </div>}
       <button onClick={() => setTab("practice")} style={{ width: "100%", padding: "14px 0", borderRadius: 22, border: "none", marginTop: 14,
         background: `linear-gradient(135deg,${C.pink},${C.purple})`, color: "#fff", fontSize: 18, fontWeight: 800, cursor: "pointer", boxShadow: `0 4px 12px ${C.pink}40` }}>
